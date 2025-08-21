@@ -44,7 +44,55 @@ class AsyncUploader:
         self._recv_task = asyncio.create_task(self._receiver())
         logger.info("Connected to WebSocket server")
         return self
+    
+    async def upload(self):
+        if not self.state:
+            error_msg = "Call start() first"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        assert self.websocket is not None
 
+        logger.info("Starting upload process for %s", self.state.file_path.name)
+        
+        with open(self.state.file_path, "rb") as f:
+            # Seek to resume offset if any
+            if self.state.offset:
+                logger.debug("Seeking to offset: %d", self.state.offset)
+                f.seek(self.state.offset)
+
+            while not self.state.is_stopped and self.state.offset < self.state.file_size:
+                # Respect pause
+                await self._pause_event.wait()
+                if self.state.is_stopped:
+                    break
+                cur = f.tell()
+                if self.state.offset != cur:
+                    logger.debug("Resync file pointer: tell=%d -> offset=%d", cur, self.state.offset)
+                    f.seek(self.state.offset)
+
+                chunk = f.read(self.chunk_size)
+                if not chunk:
+                    break
+
+                # base64 encode
+                data_b64 = base64.b64encode(chunk).decode("ascii")
+                offset_before = self.state.offset
+
+                await self._send_json({
+                    "action": "chunk",
+                    "fileId": self.state.file_id,
+                    "offset": offset_before,
+                    "data": data_b64,
+                })
+                # Optimistically advance; server will correct via offset-mismatch
+                self.state.offset += len(chunk)
+
+                # Gentle yield to event loop
+                await asyncio.sleep(0)
+
+        if not self.state.is_stopped and self.state.offset >= self.state.file_size:
+            logger.info("Upload completed, finalizing file: %s", self.state.file_path.name)
+            await self.complete()
     async def __aexit__(self, exc_type, exc, tb):
         import contextlib
         if self._recv_task:
@@ -77,7 +125,6 @@ class AsyncUploader:
         if not self.state:
             logger.debug("Received message without state: %s", data)
             return
-
         if event == "start-ack":
             self.state.offset = int(data.get("offset", 0))
             logger.info("Start acknowledged: resume at offset=%d for %s", 
@@ -128,7 +175,6 @@ class AsyncUploader:
             file_path=path,
             file_size=path.stat().st_size,
         )
-
         logger.info("Starting upload: file=%s, size=%d bytes, id=%s", 
                    path.name, self.state.file_size, file_id)
 
@@ -138,57 +184,6 @@ class AsyncUploader:
             "fileName": path.name,
             "fileSize": self.state.file_size,
         })
-
-    async def upload(self):
-        if not self.state:
-            error_msg = "Call start() first"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg)
-        assert self.websocket is not None
-
-        logger.info("Starting upload process for %s", self.state.file_path.name)
-        
-        with open(self.state.file_path, "rb") as f:
-            # Seek to resume offset if any
-            if self.state.offset:
-                logger.debug("Seeking to offset: %d", self.state.offset)
-                f.seek(self.state.offset)
-
-            while not self.state.is_stopped and self.state.offset < self.state.file_size:
-                # Respect pause
-                await self._pause_event.wait()
-                if self.state.is_stopped:
-                    break
-                # đảm bảo con trỏ file trùng với offset hiện tại
-                cur = f.tell()
-                if self.state.offset != cur:
-                    logger.debug("Resync file pointer: tell=%d -> offset=%d", cur, self.state.offset)
-                    f.seek(self.state.offset)
-                
-                chunk = f.read(self.chunk_size)
-                if not chunk:
-                    break
-
-                # base64 encode
-                data_b64 = base64.b64encode(chunk).decode("ascii")
-                offset_before = self.state.offset
-
-                await self._send_json({
-                    "action": "chunk",
-                    "fileId": self.state.file_id,
-                    "offset": offset_before,
-                    "data": data_b64,
-                })
-
-                # Optimistically advance; server will correct via offset-mismatch
-                self.state.offset += len(chunk)
-
-                # Gentle yield to event loop
-                await asyncio.sleep(0)
-
-        if not self.state.is_stopped and self.state.offset >= self.state.file_size:
-            logger.info("Upload completed, finalizing file: %s", self.state.file_path.name)
-            await self.complete()
 
     async def pause(self):
         if not self.state or self.state.is_paused:
@@ -237,6 +232,7 @@ class AsyncUploader:
         import json
         assert self.websocket is not None
         await self.websocket.send(json.dumps(obj))
+
 
 
 async def upload_many(ws_url: str, files: Iterable[str], concurrency: int = 2, chunk: int = CHUNK_SIZE):
@@ -376,7 +372,16 @@ def main():
 
     # Thu thập tất cả files cần upload
     all_files = []
+
+    # Loại bỏ duplicate và sắp xếp
+    unique_files = list(set(all_files))
+    unique_files.sort()
     
+    if not unique_files:
+        error_msg = "Please provide at least one file path or directory"
+        logger.error(error_msg)
+        parser.error(error_msg)
+
     # Thêm files từ positional arguments
     if args.file:
         all_files.extend(args.file)
@@ -389,14 +394,6 @@ def main():
         all_files.extend(dir_files)
         logger.info("Added %d files from --dir argument", len(dir_files))
     
-    # Loại bỏ duplicate và sắp xếp
-    unique_files = list(set(all_files))
-    unique_files.sort()
-    
-    if not unique_files:
-        error_msg = "Please provide at least one file path or directory"
-        logger.error(error_msg)
-        parser.error(error_msg)
 
     # Kiểm tra interactive mode với multiple files
     if args.interactive and len(unique_files) > 1:
