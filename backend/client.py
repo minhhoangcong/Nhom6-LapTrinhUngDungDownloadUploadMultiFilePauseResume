@@ -180,10 +180,8 @@ class AsyncUploader:
                     "data": data_b64,
                 })
 
-                # Optimistically advance; server will correct via offset-mismatch
                 self.state.offset += len(chunk)
 
-                # Gentle yield to event loop
                 await asyncio.sleep(0)
 
         if not self.state.is_stopped and self.state.offset >= self.state.file_size:
@@ -211,7 +209,6 @@ class AsyncUploader:
             "action": "resume",
             "fileId": self.state.file_id,
         })
-
     async def stop(self, delete: bool = True):
         if not self.state:
             return
@@ -223,7 +220,6 @@ class AsyncUploader:
             "fileId": self.state.file_id,
             "delete": bool(delete),
         })
-
     async def complete(self):
         if not self.state:
             return
@@ -238,6 +234,74 @@ class AsyncUploader:
         assert self.websocket is not None
         await self.websocket.send(json.dumps(obj))
 
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Async WebSocket file uploader client")
+    parser.add_argument("file", nargs='*', help="Path(s) to file(s) to upload")
+    parser.add_argument("--ws", dest="ws_url", default=DEFAULT_WS_URL, help="WebSocket URL, default ws://localhost:8765/ws")
+    parser.add_argument("--dir", dest="directory_paths", nargs="+", default=None, help="Directory path(s) to upload all files from")
+    parser.add_argument("--recursive", action="store_true", help="Recursively scan subdirectories when using --dir")
+    parser.add_argument("--id", dest="file_id", default=None, help="Optional file id (only for single-file mode)")
+    parser.add_argument("--chunk", dest="chunk", type=int, default=CHUNK_SIZE, help="Chunk size in bytes (default 65536)")
+    parser.add_argument("--concurrency", dest="concurrency", type=int, default=2, help="Number of concurrent uploads for multi-file mode")
+    parser.add_argument("--interactive", dest="interactive", action="store_true", help="Interactive mode (only for single-file mode)")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Log level")
+    parser.add_argument("--log-file", default=None, help="File log (optional)")
+    
+    args = parser.parse_args()
+
+    # Thiết lập log level từ command line
+    if args.log_file:
+        logger = setup_logger("client", args.log_level, args.log_file)
+    else:
+        logger = setup_logger("client", args.log_level)
+
+    # Thu thập tất cả files cần upload
+    all_files = []
+    
+    # Thêm files từ positional arguments
+    if args.file:
+        all_files.extend(args.file)
+        logger.info("Added %d files from positional arguments", len(args.file))
+    
+    # Thêm files từ --dir argument
+    if args.directory_paths:
+        from app import collect_files_from_paths  # Import function từ app.py
+        dir_files = collect_files_from_paths(args.directory_paths, args.recursive)
+        all_files.extend(dir_files)
+        logger.info("Added %d files from --dir argument", len(dir_files))
+    
+    # Loại bỏ duplicate và sắp xếp
+    unique_files = list(set(all_files))
+    unique_files.sort()
+    
+    if not unique_files:
+        error_msg = "Please provide at least one file path or directory"
+        logger.error(error_msg)
+        parser.error(error_msg)
+
+    # Kiểm tra interactive mode với multiple files
+    if args.interactive and len(unique_files) > 1:
+        logger.warning("Interactive mode only supports single file, using first file: %s", unique_files[0])
+        unique_files = [unique_files[0]]
+
+    try:
+        if len(unique_files) == 1:
+            if args.interactive:
+                asyncio.run(interactive_upload(args.ws_url, unique_files[0], args.file_id))
+            else:
+                asyncio.run(upload_many(args.ws_url, unique_files, concurrency=1, chunk=args.chunk))
+        else:
+            asyncio.run(upload_many(args.ws_url, unique_files, concurrency=args.concurrency, chunk=args.chunk))
+    except KeyboardInterrupt:
+        logger.info("Upload interrupted by user")
+    except Exception as e:
+        logger.error("Upload error: %s", e, exc_info=True)
+        raise
+
+
+if __name__ == "__main__":
+    main()
 
 async def upload_many(ws_url: str, files: Iterable[str], concurrency: int = 2, chunk: int = CHUNK_SIZE):
     """
@@ -352,71 +416,3 @@ async def interactive_upload(ws_url: str, file_path: str, file_id: Optional[str]
             t.cancel()
 
 
-def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="Async WebSocket file uploader client")
-    parser.add_argument("file", nargs='*', help="Path(s) to file(s) to upload")
-    parser.add_argument("--ws", dest="ws_url", default=DEFAULT_WS_URL, help="WebSocket URL, default ws://localhost:8765/ws")
-    parser.add_argument("--dir", dest="directory_paths", nargs="+", default=None, help="Directory path(s) to upload all files from")
-    parser.add_argument("--recursive", action="store_true", help="Recursively scan subdirectories when using --dir")
-    parser.add_argument("--id", dest="file_id", default=None, help="Optional file id (only for single-file mode)")
-    parser.add_argument("--chunk", dest="chunk", type=int, default=CHUNK_SIZE, help="Chunk size in bytes (default 65536)")
-    parser.add_argument("--concurrency", dest="concurrency", type=int, default=2, help="Number of concurrent uploads for multi-file mode")
-    parser.add_argument("--interactive", dest="interactive", action="store_true", help="Interactive mode (only for single-file mode)")
-    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"], help="Log level")
-    parser.add_argument("--log-file", default=None, help="File log (optional)")
-    
-    args = parser.parse_args()
-
-    # Thiết lập log level từ command line
-    if args.log_file:
-        logger = setup_logger("client", args.log_level, args.log_file)
-    else:
-        logger = setup_logger("client", args.log_level)
-
-    # Thu thập tất cả files cần upload
-    all_files = []
-    
-    # Thêm files từ positional arguments
-    if args.file:
-        all_files.extend(args.file)
-        logger.info("Added %d files from positional arguments", len(args.file))
-    
-    # Thêm files từ --dir argument
-    if args.directory_paths:
-        from app import collect_files_from_paths  # Import function từ app.py
-        dir_files = collect_files_from_paths(args.directory_paths, args.recursive)
-        all_files.extend(dir_files)
-        logger.info("Added %d files from --dir argument", len(dir_files))
-    
-    # Loại bỏ duplicate và sắp xếp
-    unique_files = list(set(all_files))
-    unique_files.sort()
-    
-    if not unique_files:
-        error_msg = "Please provide at least one file path or directory"
-        logger.error(error_msg)
-        parser.error(error_msg)
-
-    # Kiểm tra interactive mode với multiple files
-    if args.interactive and len(unique_files) > 1:
-        logger.warning("Interactive mode only supports single file, using first file: %s", unique_files[0])
-        unique_files = [unique_files[0]]
-
-    try:
-        if len(unique_files) == 1:
-            if args.interactive:
-                asyncio.run(interactive_upload(args.ws_url, unique_files[0], args.file_id))
-            else:
-                asyncio.run(upload_many(args.ws_url, unique_files, concurrency=1, chunk=args.chunk))
-        else:
-            asyncio.run(upload_many(args.ws_url, unique_files, concurrency=args.concurrency, chunk=args.chunk))
-    except KeyboardInterrupt:
-        logger.info("Upload interrupted by user")
-    except Exception as e:
-        logger.error("Upload error: %s", e, exc_info=True)
-        raise
-
-
-if __name__ == "__main__":
-    main()
