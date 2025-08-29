@@ -40,14 +40,11 @@ def setup_logger(name: str, level: str = "INFO", log_file: str = None) -> loggin
 def get_logger(name: str) -> logging.Logger:
     """
     Lấy logger đã được cấu hình
-    
     Args:
         name: Tên logger
-    
     Returns:
         Logger
     """
     return logging.getLogger(name)
 
-# Logger mặc định
 default_logger = setup_logger("default")
