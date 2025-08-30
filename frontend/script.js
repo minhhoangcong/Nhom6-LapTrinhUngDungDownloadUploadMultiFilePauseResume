@@ -10,17 +10,478 @@ class FlexTransferHub {
     this.lastRenderTime = 0;
     this.renderThrottle = 500; // Giảm throttle xuống 0.5 giây để cập nhật nhanh hơn
     this.maxConcurrentUploads = 5; // Tăng số upload đồng thời từ 2 lên 5
+    this.authToken = null; // Auth token for upload
+    this.currentUser = null; // Current user info
+    this.wsConnectionAttempts = 0; // Track connection attempts
+    this.wsReconnectDelay = 1000; // Reconnection delay
     this.init();
   }
 
-  init() {
+  async init() {
+    await this.checkAuthentication();
     this.setupEventListeners();
     this.setupDragAndDrop();
     this.setupSettingsModal();
     this.setupViewToggle();
     this.updateStatusCards();
+    await this.loadExistingFiles(); // Load files from backend
+    await this.refreshDashboardStats(); // FIX: Get real stats from backend
     this.renderTransfers();
     this.connectWebSocket();
+  }
+
+  // Check authentication và lấy token
+  async checkAuthentication() {
+    try {
+      // Luôn kiểm tra với file manager server để lấy token mới nhất
+      // Không dùng localStorage để tránh token cũ
+      const response = await fetch("http://localhost:5000/api/auth/check", {
+        method: "GET",
+        credentials: "include", // Gửi cookies
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        this.authToken = data.token;
+        this.currentUser = data.user;
+
+        // Cập nhật localStorage với token mới
+        localStorage.setItem("auth_token", this.authToken);
+        localStorage.setItem("user_info", JSON.stringify(this.currentUser));
+
+        this.showNotification(
+          `Welcome, ${this.currentUser.username}!`,
+          "success"
+        );
+
+        console.log(
+          `Authenticated as: ${this.currentUser.username} (ID: ${this.currentUser.id})`
+        );
+      } else {
+        throw new Error("Not authenticated");
+      }
+    } catch (e) {
+      console.error("Auth check error:", e);
+      this.authToken = null;
+      this.currentUser = null;
+      this.showNotification(
+        "Please login at the file manager to upload files",
+        "warning"
+      );
+
+      // Hiển thị nút đăng nhập
+      this.showLoginPrompt();
+    }
+  }
+
+  // Hiển thị prompt để đăng nhập
+  showLoginPrompt() {
+    const existingPrompt = document.querySelector(".login-prompt");
+    if (existingPrompt) return; // Đã hiển thị rồi
+
+    const prompt = document.createElement("div");
+    prompt.className = "login-prompt";
+    prompt.innerHTML = `
+      <div style="
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #ff6b6b;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      ">
+        <span>⚠️ Please login first to upload files</span>
+        <button onclick="window.open('http://localhost:5000/login', '_blank')" style="
+          background: white;
+          color: #ff6b6b;
+          border: none;
+          padding: 8px 15px;
+          border-radius: 5px;
+          cursor: pointer;
+          font-weight: bold;
+        ">Login</button>
+        <button onclick="this.parentElement.parentElement.remove()" style="
+          background: transparent;
+          color: white;
+          border: 1px solid white;
+          padding: 8px 12px;
+          border-radius: 5px;
+          cursor: pointer;
+        ">×</button>
+      </div>
+    `;
+    document.body.appendChild(prompt);
+  }
+
+  // Load existing files from backend
+  async loadExistingFiles() {
+    console.log("💡 Loading files from current session...");
+
+    // Load files from sessionStorage (chỉ trong session hiện tại)
+    try {
+      const savedFiles = sessionStorage.getItem("current_session_files");
+      if (savedFiles) {
+        const files = JSON.parse(savedFiles);
+        console.log(`📁 Found ${files.length} files from current session`);
+        console.log(
+          "📁 Session files:",
+          files.map((f) => ({ id: f.id, name: f.name }))
+        );
+        console.log(
+          "📁 Current transfers before load:",
+          this.transfers.map((t) => ({ id: t.id, name: t.name }))
+        );
+
+        // Convert to transfer format
+        files.forEach((file) => {
+          const uploadTime = new Date(
+            file.uploadedAt || new Date().toISOString()
+          );
+          const transfer = {
+            id: file.id, // Use original ID from sessionStorage
+            name: file.name,
+            size: file.size,
+            type: file.type || "file",
+            progress: 100,
+            status: "completed",
+            speed: 0,
+            timeRemaining: 0,
+            uploadedAt: file.uploadedAt || new Date().toISOString(),
+            startTime: uploadTime,
+            endTime: uploadTime,
+            uploadTimeDisplay: this.formatUploadTime(uploadTime), // Add formatted time
+            category: "upload",
+            remoteFileId: file.remoteFileId,
+            isCurrentSession: true, // Flag để phân biệt current session
+          };
+
+          // Chỉ add nếu chưa có trong transfers (check by ID)
+          if (!this.transfers.find((t) => t.id === transfer.id)) {
+            this.transfers.push(transfer);
+            console.log(
+              `✅ Added to transfers: ${transfer.name} (ID: ${transfer.id})`
+            );
+          } else {
+            console.log(
+              `⚠️ Skipped duplicate: ${transfer.name} (ID: ${transfer.id})`
+            );
+          }
+        });
+
+        console.log(
+          "📁 Current transfers after load:",
+          this.transfers.map((t) => ({
+            id: t.id,
+            name: t.name,
+            status: t.status,
+          }))
+        );
+
+        this.updateStatusCards();
+        this.renderTransfers();
+      } else {
+        console.log("📝 No files found in current session");
+      }
+    } catch (error) {
+      console.error("Error loading session files:", error);
+    }
+
+    // Load files from backend (Previous Uploads)
+    await this.loadPreviousUploads();
+  }
+
+  // Load previous uploads from backend
+  async loadPreviousUploads() {
+    if (!this.authToken) {
+      console.log("No auth token, skipping previous uploads load");
+      return;
+    }
+
+    try {
+      console.log("Loading previous uploads from backend...");
+      const response = await fetch("http://localhost:5000/api/files", {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.authToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const files = await response.json();
+
+        // Only show files from last 2 hours
+        const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+        const recentFiles = files.filter((file) => {
+          const fileTime = new Date(
+            file.upload_time || file.created_at
+          ).getTime();
+          return fileTime > twoHoursAgo;
+        });
+
+        console.log(`[DEBUG] Total files from backend: ${files.length}`);
+        console.log(`[DEBUG] Files in last 2 hours: ${recentFiles.length}`);
+
+        // Convert recent backend files to frontend transfer format
+        recentFiles.forEach((file) => {
+          // Skip files stuck in uploading status that are old
+          if (file.status === "uploading") {
+            const fileAge =
+              Date.now() -
+              new Date(file.upload_time || file.created_at).getTime();
+            const thirtyMinutes = 30 * 60 * 1000;
+            if (fileAge > thirtyMinutes) {
+              console.warn(
+                `Skipping stuck upload: ${file.filename} (age: ${Math.round(
+                  fileAge / 60000
+                )} minutes)`
+              );
+              return;
+            }
+          }
+
+          // Skip if already exists (check by backend file ID only)
+          const existingTransfer = this.transfers.find(
+            (t) => t.id === `file_${file.id}`
+          );
+          // Skip if file is already in current session (by name or remoteFileId)
+          const sessionTransfer = this.transfers.find(
+            (t) =>
+              t.isCurrentSession &&
+              (t.remoteFileId === file.id ||
+                t.name === (file.name || file.filename))
+          );
+          if (!existingTransfer && !sessionTransfer) {
+            const uploadTime = new Date(file.upload_time || Date.now());
+            const transfer = {
+              id: `file_${file.id}`,
+              name: file.name || file.filename,
+              size: file.size || 0,
+              type: "upload",
+              status: file.status === "completed" ? "completed" : "active",
+              progress: file.status === "completed" ? 100 : 0,
+              speed: "0 B/s",
+              startTime: uploadTime,
+              endTime: file.status === "completed" ? uploadTime : null,
+              uploadTimeDisplay: this.formatUploadTime(uploadTime), // Add time display for Previous Uploads
+              downloadUrl:
+                file.status === "completed"
+                  ? `http://localhost:5000/api/files/${file.id}/download`
+                  : null,
+              fileId: file.id,
+              isExistingFile: true,
+              isPreviousSession: true, // Flag để phân biệt files cũ
+              category: "upload",
+            };
+            this.transfers.push(transfer);
+            console.log(
+              `✅ Added previous upload: ${transfer.name} (ID: ${transfer.id})`
+            );
+          }
+        });
+
+        console.log(
+          "📁 All transfers after complete load:",
+          this.transfers.length
+        );
+        this.updateStatusCards();
+        this.renderTransfers();
+      } else {
+        console.error("Failed to load files from backend:", response.status);
+      }
+    } catch (error) {
+      console.error("Error loading previous uploads:", error);
+    }
+  }
+
+  // Save completed file to sessionStorage
+  saveCompletedFileToSession(transfer) {
+    try {
+      // Get existing saved files
+      const savedFiles = JSON.parse(
+        sessionStorage.getItem("current_session_files") || "[]"
+      );
+
+      // Create file object with consistent ID
+      const fileData = {
+        id: transfer.id, // Use original transfer ID
+        name: transfer.name,
+        size: transfer.size,
+        type: transfer.type,
+        uploadedAt: new Date().toISOString(),
+        remoteFileId: transfer.remoteFileId,
+      };
+
+      // Remove existing entry with same ID or name, then add new one
+      const filteredFiles = savedFiles.filter(
+        (f) => f.id !== transfer.id && f.name !== transfer.name
+      );
+      filteredFiles.push(fileData);
+
+      sessionStorage.setItem(
+        "current_session_files",
+        JSON.stringify(filteredFiles)
+      );
+      console.log(
+        `💾 Saved file to session: ${transfer.name} (ID: ${transfer.id})`
+      );
+      console.log(
+        `💾 Session now has ${filteredFiles.length} files:`,
+        filteredFiles.map((f) => f.name)
+      );
+    } catch (error) {
+      console.error("Error saving file to session:", error);
+    }
+  }
+
+  // Remove file from sessionStorage
+  removeFileFromSession(transferId, transferName) {
+    try {
+      const savedFiles = JSON.parse(
+        sessionStorage.getItem("current_session_files") || "[]"
+      );
+      const filteredFiles = savedFiles.filter(
+        (f) => f.id !== transferId && f.name !== transferName
+      );
+      sessionStorage.setItem(
+        "current_session_files",
+        JSON.stringify(filteredFiles)
+      );
+      console.log(`🗑️ Removed file from session: ${transferName}`);
+    } catch (error) {
+      console.error("Error removing file from session:", error);
+    }
+
+    /* COMMENTED OUT - Previous logic to load files from backend
+    if (!this.authToken) {
+      console.log("No auth token, skipping file load");
+      return;
+    }
+
+    try {
+      console.log("Loading recent files from backend...");
+      const response = await fetch("http://localhost:5000/api/files", {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.authToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const files = await response.json();
+        
+        // Only show files from last 2 hours or current session
+        const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
+        const recentFiles = files.filter(file => {
+          const fileTime = new Date(file.upload_time || file.created_at).getTime();
+          return fileTime > twoHoursAgo;
+        });
+        
+        console.log(`[DEBUG] Total files from backend: ${files.length}`);
+        console.log(`[DEBUG] Files in last 2 hours: ${recentFiles.length}`);
+        console.log(`[DEBUG] Filter time: ${new Date(twoHoursAgo).toLocaleString()}`);
+        console.log(`[DEBUG] Recent files:`, recentFiles.map(f => ({
+          name: f.filename,
+          time: new Date(f.upload_time || f.created_at).toLocaleString(),
+          status: f.status
+        })));
+
+        // Convert recent backend files to frontend transfer format
+        recentFiles.forEach((file) => {
+          // Skip files stuck in uploading status that are old
+          if (file.status === "uploading") {
+            const fileAge = Date.now() - new Date(file.upload_time || file.created_at).getTime();
+            const thirtyMinutes = 30 * 60 * 1000; // 30 minutes in ms
+            
+            if (fileAge > thirtyMinutes) {
+              console.warn(`Skipping stuck upload: ${file.filename} (age: ${Math.round(fileAge / 60000)} minutes)`);
+              return; // Skip this file
+            }
+          }
+          
+          const existingTransfer = this.transfers.find(
+            (t) => t.id === `file_${file.id}`
+          );
+          if (!existingTransfer) {
+            const uploadTime = new Date(file.upload_time || Date.now());
+            const transfer = {
+              id: `file_${file.id}`,
+              name: file.name || file.filename,
+              size: file.size || 0,
+              type: "upload",
+              status: file.status === "completed" ? "completed" : "active",
+              progress: file.status === "completed" ? 100 : 0,
+              speed: "0 B/s",
+              startTime: uploadTime,
+              endTime: file.status === "completed" ? uploadTime : null,
+              downloadUrl:
+                file.status === "completed"
+                  ? `http://localhost:5000/api/files/${file.id}/download`
+                  : null,
+              fileId: file.id,
+              isExistingFile: true,
+              isPreviousSession: true, // Flag để phân biệt files cũ
+              uploadTimeDisplay: this.formatUploadTime(uploadTime), // Formatted time
+            };
+            this.transfers.push(transfer);
+          }
+        });
+
+        // Only show notification for multiple files to avoid spam
+        if (recentFiles.length > 2) {
+          this.showNotification(
+            `Loaded ${recentFiles.length} recent upload${recentFiles.length !== 1 ? 's' : ''} from last 2 hours`,
+            "info",
+            3000 // Show for 3 seconds only
+          );
+        }
+      } else {
+        console.error("Failed to load files:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error loading existing files:", error);
+    }
+    */
+  }
+
+  // Clear previous session files from current view
+  clearPreviousSessionFiles() {
+    const currentFiles = this.transfers.length;
+    if (currentFiles === 0) {
+      this.showNotification("No files to clear", "info", 2000);
+      return;
+    }
+
+    if (
+      confirm(
+        `Clear all ${currentFiles} files from current upload session? (Files are safely stored and can be managed in File Manager)`
+      )
+    ) {
+      this.transfers = [];
+      // Clear sessionStorage as well
+      sessionStorage.removeItem("current_session_files");
+      console.log("🗑️ Cleared session storage");
+
+      this.updateStatusCards();
+      this.renderTransfers();
+      this.showNotification(
+        `Cleared ${currentFiles} files from current session`,
+        "success",
+        3000
+      );
+    }
   }
 
   // Throttled render để tránh UI giật
@@ -95,10 +556,38 @@ class FlexTransferHub {
       ) {
         return;
       }
-      this.ws = new WebSocket(this.wsUrl);
+
+      // Tạo WebSocket URL với auth token nếu có
+      let wsUrl = this.wsUrl;
+      if (this.authToken) {
+        const url = new URL(wsUrl);
+        url.searchParams.set("token", this.authToken);
+        wsUrl = url.toString();
+      }
+
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        this.showNotification("Connected to upload server", "success");
+        // Only show notification on reconnection, not initial connection
+        if (this.wsConnectionAttempts > 0) {
+          this.showNotification("Reconnected to upload server", "success");
+        }
+
+        // Reset reconnection state
+        this.wsConnectionAttempts = 0;
+        this.wsReconnectDelay = 1000;
+
+        // Gửi authentication message
+        if (this.authToken && this.currentUser) {
+          this.ws.send(
+            JSON.stringify({
+              type: "auth",
+              token: this.authToken,
+              user: this.currentUser,
+            })
+          );
+        }
+
         this.maybeStartNextUploads(); // bật lại các job đang chờ, tôn trọng limit
       };
 
@@ -110,6 +599,11 @@ class FlexTransferHub {
           if (t.type === "upload" && t.status === "active") t.status = "queued";
         });
         this.renderTransfers();
+
+        // CRITICAL FIX: Auto-reconnect with exponential backoff
+        if (!this._manualClose) {
+          this.scheduleReconnection();
+        }
       };
 
       this.ws.onerror = (error) => {
@@ -125,8 +619,89 @@ class FlexTransferHub {
         "Failed to connect to server - retrying in 3s...",
         "error"
       );
-      setTimeout(() => this.connectWebSocket(), 3000);
+      this.scheduleReconnection();
     }
+  }
+
+  // CRITICAL FIX: Add WebSocket reconnection with exponential backoff
+  async reconnectWebSocket() {
+    if (this._reconnecting) {
+      console.log("Reconnection already in progress");
+      return false;
+    }
+
+    this._reconnecting = true;
+    this.wsConnectionAttempts++; // Track attempts
+    console.log(
+      `Attempting WebSocket reconnection (attempt ${this.wsConnectionAttempts})...`
+    );
+
+    try {
+      // Close existing connection if any
+      if (this.ws) {
+        this._manualClose = true;
+        this.ws.close();
+        this._manualClose = false;
+      }
+
+      // Wait a bit before reconnecting
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Create new connection
+      this.connectWebSocket();
+
+      // Wait for connection to establish
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("Connection timeout")),
+          5000
+        );
+
+        const checkConnection = () => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            clearTimeout(timeout);
+            resolve();
+          } else if (this.ws && this.ws.readyState === WebSocket.CLOSED) {
+            clearTimeout(timeout);
+            reject(new Error("Connection failed"));
+          } else {
+            setTimeout(checkConnection, 100);
+          }
+        };
+
+        checkConnection();
+      });
+
+      console.log("WebSocket reconnection successful");
+      // Don't show notification here - it's already shown in onopen
+      return true;
+    } catch (error) {
+      console.error("WebSocket reconnection failed:", error);
+      return false;
+    } finally {
+      this._reconnecting = false;
+    }
+  }
+
+  scheduleReconnection() {
+    if (this._reconnectTimer) return;
+
+    // Exponential backoff: start with 3s, max 30s
+    this._reconnectDelay = Math.min((this._reconnectDelay || 3) * 1.5, 30);
+
+    console.log(
+      `Scheduling WebSocket reconnection in ${this._reconnectDelay} seconds...`
+    );
+    this._reconnectTimer = setTimeout(async () => {
+      this._reconnectTimer = null;
+      const success = await this.reconnectWebSocket();
+
+      if (success) {
+        this._reconnectDelay = 3; // Reset delay on success
+      } else {
+        this.scheduleReconnection(); // Try again with longer delay
+      }
+    }, this._reconnectDelay * 1000);
   }
 
   ensureSocketOpen() {
@@ -260,6 +835,13 @@ class FlexTransferHub {
           console.warn("Received resume-ack for unknown transfer:", fileId);
           return;
         }
+
+        // CRITICAL FIX: Clear timeout to prevent duplicate upload loop
+        if (transfer._resumeTimeoutId) {
+          clearTimeout(transfer._resumeTimeoutId);
+          transfer._resumeTimeoutId = null;
+        }
+
         console.log(
           "Setting transfer to active and starting upload loop for:",
           fileId
@@ -273,11 +855,19 @@ class FlexTransferHub {
         this.renderTransfers();
         this.updateStatusCards();
 
-        // Start upload loop với delay nhỏ để UI smooth
-        setTimeout(() => {
-          console.log("Starting upload loop for resumed transfer:", fileId);
-          this.uploadLoop(transfer);
-        }, 50);
+        // CRITICAL FIX: Only start upload loop if not already running
+        if (!transfer._loopRunning) {
+          setTimeout(() => {
+            console.log("Starting upload loop for resumed transfer:", fileId);
+            this.uploadLoop(transfer);
+          }, 50);
+        } else {
+          console.log(
+            "Upload loop already running for:",
+            fileId,
+            "skipping start"
+          );
+        }
         return;
       }
 
@@ -297,13 +887,36 @@ class FlexTransferHub {
         this.renderTransfers();
       }
       if (msg.event === "complete-ack") {
+        console.log(
+          `[DEBUG] Received complete-ack event for fileId: ${fileId}`,
+          msg
+        );
+
         if (!transfer) {
           console.warn("Received complete-ack for unknown transfer:", fileId);
+          console.log(
+            `[DEBUG] Looking for transfer with ID: ${fileId} in ${this.transfers.length} transfers`
+          );
           return;
         }
         transfer.status = "completed";
         transfer.progress = 100;
         transfer.speed = "0 KB/s";
+        transfer.endTime = new Date();
+        transfer.uploadTimeDisplay = this.formatUploadTime(transfer.endTime);
+
+        console.log(
+          `[DEBUG] Updated transfer ${fileId} to completed status via complete-ack`
+        );
+        console.log(
+          `🎯 Transfer completed: ${transfer.name} (${
+            this.transfers.filter((t) => t.status === "completed").length
+          }/${this.transfers.length} total completed)`
+        );
+
+        // Save completed file to sessionStorage
+        this.saveCompletedFileToSession(transfer);
+
         this.updateStatusCards();
         this.renderTransfers();
         // Thử start các transfer đang chờ khác
@@ -331,14 +944,40 @@ class FlexTransferHub {
       }
 
       if (msg.event === "completed") {
+        console.log(
+          `[DEBUG] Received completed event for fileId: ${fileId}`,
+          msg
+        );
+        console.log(
+          `[DEBUG] Available transfers:`,
+          this.transfers.map((t) => ({
+            id: t.id,
+            name: t.name,
+            status: t.status,
+          }))
+        );
+
         if (!transfer) {
           console.warn("Received completed for unknown transfer:", fileId);
+          console.log(
+            `[DEBUG] Looking for transfer with ID: ${fileId} in ${this.transfers.length} transfers`
+          );
           return;
         }
         transfer.status = "completed";
         transfer.progress = 100;
         transfer.speed = "0 KB/s";
         transfer.remoteFileId = msg.remoteFileId;
+        transfer.endTime = new Date();
+        transfer.uploadTimeDisplay = this.formatUploadTime(transfer.endTime);
+        console.log(`[DEBUG] Updated transfer ${fileId} to completed status`);
+        console.log(
+          `🎯 Transfer completed via 'completed' event: ${transfer.name}`
+        );
+
+        // Save completed file to sessionStorage
+        this.saveCompletedFileToSession(transfer);
+
         this.updateStatusCards();
         this.renderTransfers();
         // Thử start các transfer đang chờ khác
@@ -454,6 +1093,12 @@ class FlexTransferHub {
     transfer.lastTickAt = performance.now();
     transfer._stopCurrentLoop = false; // Reset flag khi bắt đầu upload
 
+    // Debug: log current user and token
+    console.log(
+      `Starting upload as user: ${this.currentUser?.username} (ID: ${this.currentUser?.id})`
+    );
+    console.log(`Using token: ${this.authToken?.substring(0, 20)}...`);
+
     // Update UI immediately to show correct buttons
     this.renderTransfers();
 
@@ -463,6 +1108,8 @@ class FlexTransferHub {
       fileId: transfer.id,
       fileName: transfer.name,
       fileSize: transfer.size,
+      authToken: this.authToken, // Gửi auth token
+      user_id: this.currentUser?.id, // Gửi user ID
     });
   }
 
@@ -488,19 +1135,40 @@ class FlexTransferHub {
       return;
     }
 
-    // không cho chạy 2 vòng lặp cùng lúc
+    // CRITICAL FIX: Sử dụng atomic lock để tránh race condition
     if (transfer._loopRunning) {
       console.log("uploadLoop exiting - already running");
       return;
     }
     transfer._loopRunning = true;
-    console.log("uploadLoop starting for:", transfer.id);
+    transfer._loopId = Date.now() + Math.random(); // Unique loop ID
+    const currentLoopId = transfer._loopId;
+    console.log(
+      "uploadLoop starting for:",
+      transfer.id,
+      "loopId:",
+      currentLoopId
+    );
 
     try {
+      // Check if file object exists before starting upload
+      if (!transfer.file) {
+        console.error(
+          "Upload failed: No file object found for transfer:",
+          transfer.id
+        );
+        transfer.status = "error";
+        transfer.error =
+          "File object missing. Please try uploading the file again.";
+        this.renderTransfers();
+        return;
+      }
+
       while (
         transfer.status === "active" &&
         transfer.bytesSent < transfer.size &&
-        !transfer._stopCurrentLoop // Kiểm tra flag để dừng loop
+        !transfer._stopCurrentLoop && // Kiểm tra flag để dừng loop
+        transfer._loopId === currentLoopId // CRITICAL FIX: Verify loop ownership
       ) {
         const start = transfer.bytesSent; // luôn lấy offset mới nhất
         const end = Math.min(start + this.chunkSize, transfer.size);
@@ -508,9 +1176,13 @@ class FlexTransferHub {
         const buffer = await slice.arrayBuffer();
         const base64 = this.arrayBufferToBase64(buffer);
 
-        // Kiểm tra lại status trước khi gửi chunk (có thể đã bị stop)
-        if (transfer.status !== "active" || transfer._stopCurrentLoop) {
-          console.log("Upload stopped before sending chunk, breaking loop");
+        // CRITICAL FIX: Double-check loop ownership before sending
+        if (
+          transfer._loopId !== currentLoopId ||
+          transfer.status !== "active" ||
+          transfer._stopCurrentLoop
+        ) {
+          console.log("Upload stopped or ownership changed, breaking loop");
           break;
         }
 
@@ -532,26 +1204,44 @@ class FlexTransferHub {
           transfer._waitingForAck &&
           transfer.status === "active" &&
           !transfer._stopCurrentLoop &&
+          transfer._loopId === currentLoopId && // CRITICAL FIX: Check ownership
           waitCount < maxWaitTime
         ) {
           await new Promise((r) => setTimeout(r, 100)); // Wait 100ms
           waitCount++;
         }
 
-        // Nếu timeout hoặc stopped, break
+        // CRITICAL FIX: Better timeout handling
         if (waitCount >= maxWaitTime) {
           console.warn(
             `Timeout waiting for chunk-ack after ${
               maxWaitTime * 100
-            }ms, breaking upload loop`
+            }ms, will retry connection`
           );
           transfer._waitingForAck = false;
-          transfer.status = "error";
-          transfer.error = "Server response timeout";
+
+          // Instead of setting error, try to reconnect WebSocket
+          if (this.ws.readyState !== WebSocket.OPEN) {
+            console.log("WebSocket disconnected, attempting reconnection...");
+            await this.reconnectWebSocket();
+            // Don't set error, let user manually retry
+            transfer.status = "paused";
+            this.showNotification(
+              `Connection lost for ${transfer.name}. Click Resume to retry.`,
+              "warning"
+            );
+          } else {
+            transfer.status = "error";
+            transfer.error = "Server response timeout";
+          }
           this.renderTransfers();
           break;
         }
-        if (transfer.status !== "active" || transfer._stopCurrentLoop) {
+        if (
+          transfer.status !== "active" ||
+          transfer._stopCurrentLoop ||
+          transfer._loopId !== currentLoopId
+        ) {
           transfer._waitingForAck = false;
           break;
         }
@@ -566,7 +1256,23 @@ class FlexTransferHub {
       transfer.error = error.message || "Upload failed";
       this.renderTransfers();
     } finally {
-      transfer._loopRunning = false;
+      // CRITICAL FIX: Always clean up loop state, but only if we own the loop
+      if (transfer._loopId === currentLoopId) {
+        transfer._loopRunning = false;
+        transfer._loopId = null;
+        console.log(
+          "uploadLoop finished for:",
+          transfer.id,
+          "final status:",
+          transfer.status
+        );
+      } else {
+        console.log(
+          "uploadLoop ownership lost for:",
+          transfer.id,
+          "not cleaning up"
+        );
+      }
       this.renderTransfers();
       this.updateStatusCards();
     }
@@ -691,6 +1397,14 @@ class FlexTransferHub {
 
     // Status cards click handlers
     this.setupStatusCards();
+
+    // Clear previous session button
+    const clearPreviousBtn = document.getElementById("clear-previous-btn");
+    if (clearPreviousBtn) {
+      clearPreviousBtn.addEventListener("click", () => {
+        this.clearPreviousSessionFiles();
+      });
+    }
   }
 
   setupDragAndDrop() {
@@ -865,7 +1579,9 @@ class FlexTransferHub {
   handleFileSelection(files) {
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file) => {
+    console.log(`🎯 Starting upload of ${files.length} files`);
+
+    Array.from(files).forEach((file, index) => {
       const transfer = {
         id: this.generateId(),
         name: file.name,
@@ -884,10 +1600,42 @@ class FlexTransferHub {
       };
 
       this.transfers.push(transfer);
+      console.log(
+        `📎 Added file ${index + 1}/${files.length}: ${file.name} (ID: ${
+          transfer.id
+        })`
+      );
     });
+
+    const totalFiles = files.length;
+    const activeUploads = this.countActiveUploads();
+    const willBeQueued = Math.max(
+      0,
+      totalFiles - (this.maxConcurrentUploads - activeUploads)
+    );
+
+    console.log(
+      `📊 Upload summary: ${totalFiles} files total, ${activeUploads} currently active, ${willBeQueued} will be queued`
+    );
+    console.log(`📊 Current transfers count: ${this.transfers.length}`);
 
     this.updateStatusCards();
     this.renderTransfers();
+
+    if (totalFiles > 0) {
+      if (willBeQueued > 0) {
+        this.showNotification(
+          `Đã thêm ${totalFiles} files. ${willBeQueued} files sẽ chờ trong queue (max ${this.maxConcurrentUploads} uploads đồng thời)`,
+          "info"
+        );
+      } else {
+        this.showNotification(
+          `Đã thêm ${totalFiles} files. Tất cả sẽ bắt đầu upload ngay`,
+          "success"
+        );
+      }
+    }
+
     this.maybeStartNextUploads();
   }
 
@@ -964,6 +1712,12 @@ class FlexTransferHub {
         ".transfers-list, .transfers-grid"
       );
 
+      // FIX: Remove existing containers to prevent duplicates
+      const existingContainers = document.querySelectorAll(
+        ".transfers-container, .transfer-section, .transfers-scroll-wrapper"
+      );
+      existingContainers.forEach((container) => container.remove());
+
       let filteredTransfers = this.transfers;
 
       // Filter based on active tab
@@ -987,41 +1741,67 @@ class FlexTransferHub {
         noTransfersSection.style.display = "none";
       }
 
-      // Nếu đã có list và số lượng transfers không đổi và view mode không đổi, chỉ update status
-      if (
-        existingList &&
-        existingList.children.length === filteredTransfers.length &&
-        ((this.viewMode === "grid" &&
-          existingList.classList.contains("transfers-grid")) ||
-          (this.viewMode === "list" &&
-            existingList.classList.contains("transfers-list")))
-      ) {
-        this.updateExistingTransferItems(filteredTransfers);
-        return;
-      }
+      // Group transfers by session type
+      const currentSessionTransfers = filteredTransfers.filter(
+        (t) =>
+          t.isCurrentSession || (!t.isPreviousSession && !t.isCurrentSession)
+      );
+      const previousSessionTransfers = filteredTransfers.filter(
+        (t) => t.isPreviousSession
+      );
 
-      // Remove existing transfer list nếu cần re-render hoàn toàn
+      // Sort current session transfers by upload time (newest first)
+      currentSessionTransfers.sort((a, b) => {
+        const timeA = new Date(a.uploadedAt || a.startTime || 0).getTime();
+        const timeB = new Date(b.uploadedAt || b.startTime || 0).getTime();
+        return timeB - timeA;
+      });
+
+      // Sort previous session transfers by upload time (newest first)
+      previousSessionTransfers.sort(
+        (a, b) => new Date(b.startTime) - new Date(a.startTime)
+      );
+
+      // Remove existing transfer list for complete re-render
       if (existingList) {
         existingList.remove();
       }
 
-      // Create transfers list với class phù hợp cho view mode
-      const transfersList = document.createElement("section");
-      const listClass =
-        this.viewMode === "grid" ? "transfers-grid" : "transfers-list";
-      transfersList.className = listClass;
-      transfersList.setAttribute("aria-label", "Transfer list");
+      // Create transfers container with scroll wrapper
+      const transfersContainer = document.createElement("div");
+      transfersContainer.className = "transfers-container";
 
-      filteredTransfers.forEach((transfer) => {
-        const transferItem = this.createTransferItem(transfer);
-        transfersList.appendChild(transferItem);
-      });
+      // Add scroll wrapper for the entire transfer area
+      const scrollWrapper = document.createElement("div");
+      scrollWrapper.className = "transfers-scroll-wrapper";
+
+      // Create current session section if there are any
+      if (currentSessionTransfers.length > 0) {
+        const currentSection = this.createTransferSection(
+          "Current Session",
+          currentSessionTransfers,
+          "current-session"
+        );
+        scrollWrapper.appendChild(currentSection);
+      }
+
+      // Create previous session section if there are any
+      if (previousSessionTransfers.length > 0) {
+        const previousSection = this.createTransferSection(
+          "Previous Uploads",
+          previousSessionTransfers,
+          "previous-session"
+        );
+        scrollWrapper.appendChild(previousSection);
+      }
+
+      transfersContainer.appendChild(scrollWrapper);
 
       // Insert after tabs
       const tabsWrapper = document.querySelector(".tabs-wrapper");
       if (tabsWrapper && tabsWrapper.parentNode) {
         tabsWrapper.parentNode.insertBefore(
-          transfersList,
+          transfersContainer,
           tabsWrapper.nextSibling
         );
       }
@@ -1030,45 +1810,44 @@ class FlexTransferHub {
     }
   }
 
+  // Helper method to create transfer sections
+  createTransferSection(title, transfers, sectionClass) {
+    const section = document.createElement("div");
+    section.className = `transfer-section ${sectionClass}`;
+
+    // Create section header
+    const header = document.createElement("div");
+    header.className = "section-header";
+    header.innerHTML = `
+      <h3>${title}</h3>
+      <span class="section-count">${transfers.length} file${
+      transfers.length !== 1 ? "s" : ""
+    }</span>
+    `;
+    section.appendChild(header);
+
+    // Create transfers list với class phù hợp cho view mode
+    const transfersList = document.createElement("div");
+    const listClass =
+      this.viewMode === "grid" ? "transfers-grid" : "transfers-list";
+    transfersList.className = listClass;
+    transfersList.setAttribute("aria-label", `${title} transfer list`);
+
+    transfers.forEach((transfer) => {
+      const transferItem = this.createTransferItem(transfer);
+      transfersList.appendChild(transferItem);
+    });
+
+    section.appendChild(transfersList);
+    return section;
+  }
+
   // Update existing transfer items without full re-render
   updateExistingTransferItems(filteredTransfers) {
-    const existingList = document.querySelector(
-      ".transfers-list, .transfers-grid"
-    );
-    if (!existingList) return;
-
-    const existingItems = existingList.children;
-
-    filteredTransfers.forEach((transfer, index) => {
-      if (index < existingItems.length) {
-        const item = existingItems[index];
-
-        // Update status class
-        item.className = `transfer-item ${transfer.status}`;
-
-        // Update progress bar và percentage
-        const progressFill = item.querySelector(".progress-fill");
-        const progressElement = item.querySelector(".transfer-percentage");
-        if (progressFill) {
-          progressFill.style.width = `${transfer.progress}%`;
-        }
-        if (progressElement) {
-          progressElement.textContent = `${Math.round(transfer.progress)}%`;
-        }
-
-        // Update speed
-        const speedElement = item.querySelector(".transfer-speed");
-        if (speedElement) {
-          speedElement.textContent = transfer.speed || "0 KB/s";
-        }
-
-        // Update action buttons nếu status thay đổi
-        const currentDataId = item.getAttribute("data-transfer-id");
-        if (currentDataId === transfer.id) {
-          this.updateTransferItemActions(item, transfer);
-        }
-      }
-    });
+    // For now, we'll do a full re-render since the section structure is more complex
+    // This can be optimized later if needed
+    this._isRendering = false; // Reset flag
+    this.renderTransfers(); // Full re-render
   }
 
   // Tạo transfers list mới mà không gọi renderTransfers
@@ -1214,6 +1993,8 @@ class FlexTransferHub {
     const pauseBtn = item.querySelector(".pause-btn");
     const resumeBtn = item.querySelector(".resume-btn");
     const stopBtn = item.querySelector(".stop-btn");
+    const restartBtn = item.querySelector(".restart-btn");
+    const removeBtn = item.querySelector(".remove-btn");
 
     if (startBtn) {
       if (!startBtn._hasListener) {
@@ -1252,11 +2033,56 @@ class FlexTransferHub {
         stopBtn._hasListener = true;
       }
     }
+    // FIX: Add event listeners for new buttons
+    if (restartBtn) {
+      if (!restartBtn._hasListener) {
+        restartBtn.addEventListener("click", () =>
+          this.restartTransfer(transfer)
+        );
+        restartBtn._hasListener = true;
+      }
+    }
+    if (removeBtn) {
+      if (!removeBtn._hasListener) {
+        removeBtn.addEventListener("click", () =>
+          this.removeTransfer(transfer)
+        );
+        removeBtn._hasListener = true;
+      }
+    }
+  }
+
+  // Helper method to get appropriate speed display based on transfer status
+  getDisplaySpeed(transfer) {
+    switch (transfer.status) {
+      case "completed":
+        // For completed files, show "Completed" instead of "0 B/s"
+        return "Completed";
+      case "error":
+        return "Error";
+      case "pending":
+        return "Pending";
+      case "paused":
+        return "Paused";
+      case "stopped":
+        return "Stopped";
+      case "active":
+      case "uploading":
+      case "starting":
+        // For active transfers, show actual speed
+        return transfer.speed || "0 B/s";
+      default:
+        return transfer.speed || "—";
+    }
   }
 
   createTransferItem(transfer) {
     const item = document.createElement("div");
     item.className = `transfer-item ${transfer.status}`;
+    // Add class for existing files
+    if (transfer.isPreviousSession) {
+      item.className += " previous-session";
+    }
     item.setAttribute("data-id", transfer.id);
     item.setAttribute("data-transfer-id", transfer.id); // Thêm để optimize update
     item.dataset.lastStatus = transfer.status; // Lưu status để so sánh sau
@@ -1264,16 +2090,35 @@ class FlexTransferHub {
     const statusIcon = this.getStatusIcon(transfer.status);
     const progressBar = this.createProgressBar(transfer.progress);
 
+    // Create time indicator for completed files
+    const timeIndicator =
+      transfer.status === "completed" && transfer.uploadTimeDisplay
+        ? `<div class="time-indicator" title="Uploaded: ${transfer.uploadTimeDisplay}">
+         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-.5-13H10v6l5.25 3.15.75-1.23-4.5-2.67V7z"/>
+         </svg>
+         ${transfer.uploadTimeDisplay}
+       </div>`
+        : "";
+
     // Xác định nút nào cần hiển thị dựa trên status
     let actionButtons = "";
 
     if (transfer.status === "completed") {
-      // File đã hoàn thành - chỉ có nút Stop
+      // File đã hoàn thành - có nút Restart để upload lại
       actionButtons = `
-                <button class="action-btn stop-btn" title="Stop">
+                <button class="action-btn restart-btn" title="Upload this file again">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M6 6h12v12H6z"/>
+                        <path d="M4 12a8 8 0 0 1 7.89-8 7.85 7.85 0 0 1 5.44 2.2l.39.39a.85.85 0 0 1 0 1.22l-.39.39a.85.85 0 0 1-1.22 0l-.39-.39A6 6 0 1 0 18 12a.85.85 0 0 1 .85-.85.85.85 0 0 1 .85.85 8 8 0 1 1-15.7 0z"/>
+                        <path d="m23 3-6 6 2 2z"/>
                     </svg>
+                    Upload Again
+                </button>
+                <button class="action-btn remove-btn" title="Delete file (move to recycle bin)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>
+                    Delete
                 </button>
             `;
     } else if (transfer.status === "pending") {
@@ -1372,13 +2217,16 @@ class FlexTransferHub {
             <div class="transfer-size">${this.formatFileSize(
               transfer.size
             )}</div>
+            ${timeIndicator}
           </div>
         </div>
         <div class="progress-container">
           ${progressBar}
           <div class="progress-text">
             <span>${Math.round(transfer.progress)}%</span>
-            <span class="transfer-speed">${transfer.speed}</span>
+            <span class="transfer-speed">${this.getDisplaySpeed(
+              transfer
+            )}</span>
           </div>
         </div>
         <div class="action-buttons">
@@ -1391,12 +2239,17 @@ class FlexTransferHub {
         <div class="transfer-info">
           <div class="transfer-icon">${statusIcon}</div>
           <div class="transfer-details">
-            <div class="transfer-name">${transfer.name}</div>
+            <div class="transfer-name-row">
+              <div class="transfer-name">${transfer.name}</div>
+              ${timeIndicator}
+            </div>
             <div class="transfer-meta">
               <span class="transfer-size">${this.formatFileSize(
                 transfer.size
               )}</span>
-              <span class="transfer-speed">${transfer.speed}</span>
+              <span class="transfer-speed">${this.getDisplaySpeed(
+                transfer
+              )}</span>
             </div>
           </div>
         </div>
@@ -1459,6 +2312,9 @@ class FlexTransferHub {
       stopBtn._hasListener = true;
     }
 
+    // CRITICAL FIX: Gắn event listeners cho tất cả buttons
+    this.attachActionListeners(item, transfer);
+
     return item;
   }
 
@@ -1491,6 +2347,9 @@ class FlexTransferHub {
     const completedTransfers = this.transfers.filter(
       (t) => t.status === "completed"
     );
+    const queuedTransfers = this.transfers.filter(
+      (t) => t.status === "pending" || t.status === "queued"
+    );
     const totalFiles = this.transfers.length;
     const totalSpeed = this.calculateTotalSpeed();
 
@@ -1500,11 +2359,60 @@ class FlexTransferHub {
     this.updateStatusCard("total-files", totalFiles);
     this.updateStatusCard("total-speed", totalSpeed);
 
-    // Cập nhật thông tin upload đồng thời
+    // Cập nhật thông tin upload đồng thời với queue info
     const activeCount = document.getElementById("active-count");
     const maxConcurrent = document.getElementById("max-concurrent");
-    if (activeCount) activeCount.textContent = activeTransfers.length;
+    if (activeCount) {
+      if (queuedTransfers.length > 0) {
+        activeCount.textContent = `${activeTransfers.length} (+${queuedTransfers.length} queue)`;
+      } else {
+        activeCount.textContent = activeTransfers.length;
+      }
+    }
     if (maxConcurrent) maxConcurrent.textContent = this.maxConcurrentUploads;
+  }
+
+  // FIX: Add method to fetch and update dashboard stats from backend
+  async refreshDashboardStats() {
+    // Upload page stats based on current session only, not backend data
+    const activeTransfers = this.transfers.filter(
+      (t) =>
+        t.status === "active" ||
+        t.status === "uploading" ||
+        t.status === "paused"
+    );
+    const completedTransfers = this.transfers.filter(
+      (t) => t.status === "completed"
+    );
+    const totalTransfers = this.transfers.length;
+
+    // Calculate total speed from active transfers
+    const totalSpeed = activeTransfers.reduce((sum, t) => {
+      const speedMatch = t.speed?.match(/(\d+(?:\.\d+)?)\s*([KMGT]?B)/);
+      if (speedMatch) {
+        const value = parseFloat(speedMatch[1]);
+        const unit = speedMatch[2];
+        const multipliers = {
+          B: 1,
+          KB: 1024,
+          MB: 1024 * 1024,
+          GB: 1024 * 1024 * 1024,
+          TB: 1024 * 1024 * 1024 * 1024,
+        };
+        return sum + value * (multipliers[unit] || 1);
+      }
+      return sum;
+    }, 0);
+
+    // Update cards with current session data
+    this.updateStatusCard("active", activeTransfers.length);
+    this.updateStatusCard("completed", completedTransfers.length);
+    this.updateStatusCard("total", totalTransfers);
+    this.updateStatusCard("speed", this.formatFileSize(totalSpeed) + "/s");
+
+    console.log(
+      `📊 Current session stats: ${activeTransfers.length} active, ${completedTransfers.length} completed, ${totalTransfers} total`
+    );
   }
 
   updateStatusCard(type, value) {
@@ -1582,8 +2490,15 @@ class FlexTransferHub {
 
     if (transfer.type === "upload") {
       if (transfer.status === "active") {
+        // CRITICAL FIX: Clear any pending resume timeout
+        if (transfer._resumeTimeoutId) {
+          clearTimeout(transfer._resumeTimeoutId);
+          transfer._resumeTimeoutId = null;
+        }
+
         transfer.status = "paused";
         transfer._stopCurrentLoop = true; // Dừng upload loop
+        transfer._resuming = false; // Reset resuming flag
         // console.log("Sending pause command to server for:", transfer.id);
         this.send({ action: "pause", fileId: transfer.id });
       }
@@ -1603,9 +2518,9 @@ class FlexTransferHub {
   resumeTransfer(transfer) {
     // console.log("resumeTransfer called with:", transfer.id, "current status:", transfer.status);
 
-    // Debounce để tránh multiple calls
-    if (transfer._resuming) {
-      // console.log("Resume already in progress, ignoring");
+    // CRITICAL FIX: Stronger debounce to prevent race conditions
+    if (transfer._resuming || transfer._loopRunning) {
+      console.log("Resume ignored - already in progress or loop running");
       return;
     }
 
@@ -1645,21 +2560,21 @@ class FlexTransferHub {
 
     console.log("Starting resume process for:", transfer.id);
 
-    // Set flag để tránh duplicate calls
+    // CRITICAL FIX: Set stronger locks to prevent race conditions
     transfer._resuming = true;
+    transfer._stopCurrentLoop = false; // Reset stop flag
 
     // Smooth transition: Set intermediate state trước
     transfer.status = "resuming";
-    transfer._stopCurrentLoop = false; // Reset stop flag
     this.renderTransfers(); // Force immediate render
 
     // Gửi resume command
     console.log("Sending resume command to server for:", transfer.id);
     this.send({ action: "resume", fileId: transfer.id });
 
-    // Fallback: Nếu không nhận được resume-ack sau 2 giây, tự động bắt đầu
-    setTimeout(() => {
-      if (transfer.status === "resuming") {
+    // CRITICAL FIX: Improved fallback with better state management
+    const timeoutId = setTimeout(() => {
+      if (transfer.status === "resuming" && transfer._resuming) {
         console.log(
           "Resume-ack timeout, starting upload manually for:",
           transfer.id
@@ -1667,18 +2582,33 @@ class FlexTransferHub {
         transfer.status = "active";
         transfer._resuming = false; // Reset flag
         this.renderTransfers();
-        setTimeout(() => {
-          this.uploadLoop(transfer);
-        }, 50);
+
+        // Only start upload loop if no other loop is running
+        if (!transfer._loopRunning) {
+          setTimeout(() => {
+            this.uploadLoop(transfer);
+          }, 50);
+        }
       }
-    }, 2000);
+    }, 3000); // Increased timeout to 3 seconds
+
+    // Store timeout ID to cancel it if resume-ack arrives
+    transfer._resumeTimeoutId = timeoutId;
   }
 
   stopTransfer(transfer) {
     if (transfer.type === "upload") {
+      // CRITICAL FIX: Clean up all state properly
+      if (transfer._resumeTimeoutId) {
+        clearTimeout(transfer._resumeTimeoutId);
+        transfer._resumeTimeoutId = null;
+      }
+
       // Đặt trạng thái stopped và dừng loop ngay lập tức
       transfer.status = "stopped";
       transfer._stopCurrentLoop = true; // Dừng upload loop ngay lập tức
+      transfer._resuming = false; // Reset resuming flag
+      transfer._waitingForAck = false; // Reset waiting flag
       transfer.progress = Math.min(
         100,
         (transfer.bytesSent / Math.max(transfer.size, 1)) * 100
@@ -1710,6 +2640,342 @@ class FlexTransferHub {
         this.updateStatusCards();
         this.renderTransfers();
       }
+    }
+  }
+
+  // FIX: Add restart functionality for completed files
+  restartTransfer(transfer) {
+    if (!transfer) {
+      console.warn("restartTransfer called with invalid transfer");
+      return;
+    }
+
+    console.log(
+      "RESTART: Starting restart for:",
+      transfer.name,
+      "current status:",
+      transfer.status
+    );
+
+    if (transfer.type === "upload") {
+      // For previous session files, create a new transfer
+      if (transfer.isPreviousSession || transfer.status === "completed") {
+        // Create a completely new transfer with new ID
+        const newTransfer = {
+          id: this.generateId(),
+          name: transfer.name,
+          size: transfer.size,
+          type: "upload",
+          status: "pending",
+          progress: 0,
+          speed: "0 KB/s",
+          bytesSent: 0,
+          lastTickBytes: 0,
+          lastTickAt: performance.now(),
+          retryCount: 0,
+          file: transfer.file, // Need the original file object
+
+          // Clean state
+          _stopCurrentLoop: false,
+          _loopRunning: false,
+          _loopId: null,
+          _waitingForAck: false,
+          _resuming: false,
+
+          // Mark as current session
+          isPreviousSession: false,
+        };
+
+        // For files without file object, trigger file picker
+        if (!transfer.file) {
+          this.showNotification(
+            "Please select the file again to re-upload",
+            "warning"
+          );
+          // Trigger file picker for this specific file
+          this.triggerFilePickerForRestart(transfer, newTransfer);
+          return;
+        }
+
+        // Add to transfers array
+        this.transfers.push(newTransfer);
+
+        this.showNotification(
+          `Added ${transfer.name} to upload queue`,
+          "success"
+        );
+        this.renderTransfers();
+        this.maybeStartNextUploads();
+      } else {
+        // For current session files, just reset state
+        if (!transfer.file) {
+          console.warn(
+            "Current session file missing file object, triggering file picker"
+          );
+          // Same as previous session - need to pick file again
+          const newTransfer = {
+            id: this.generateId(),
+            name: transfer.name,
+            size: transfer.size,
+            type: "upload",
+            status: "pending",
+            progress: 0,
+            speed: "0 KB/s",
+            bytesSent: 0,
+            lastTickBytes: 0,
+            lastTickAt: performance.now(),
+            retryCount: 0,
+            file: null, // Will be set by file picker
+
+            // Clean state
+            _stopCurrentLoop: false,
+            _loopRunning: false,
+            _loopId: null,
+            _waitingForAck: false,
+            _resuming: false,
+
+            // Mark as current session
+            isPreviousSession: false,
+            isCurrentSession: true,
+          };
+
+          this.showNotification(
+            "Please select the file again to re-upload",
+            "warning"
+          );
+          this.triggerFilePickerForRestart(transfer, newTransfer);
+          return;
+        } else if (transfer.file) {
+          // Current Session files WITH file object - can reset directly
+          const newTransfer = {
+            // Copy essential fields
+            ...transfer,
+            id: transfer.id + "_restart_" + Date.now(),
+            size: transfer.size,
+            type: "upload",
+            status: "pending",
+            progress: 0,
+            speed: "0 KB/s",
+            bytesSent: 0,
+            lastTickBytes: 0,
+            lastTickAt: performance.now(),
+            retryCount: 0,
+
+            // Clean state
+            _stopCurrentLoop: false,
+            _loopRunning: false,
+            _loopId: null,
+            _waitingForAck: false,
+            _resuming: false,
+
+            // Keep file object and session status
+            file: transfer.file,
+            isPreviousSession: false,
+            isCurrentSession: true,
+          };
+
+          // Remove old transfer and add new one
+          this.removeFileTransfer(transferId);
+          this.addOrUpdateTransfer(newTransfer);
+          this.saveTransfersToStorage();
+          this.showNotification(
+            `Restarting upload for ${transfer.name}`,
+            "info"
+          );
+          return;
+        } else {
+          // Current Session files WITHOUT file object - also need file picker
+          const newTransfer = {
+            // Copy essential fields
+            ...transfer,
+            id: transfer.id + "_restart_" + Date.now(),
+            size: transfer.size,
+            type: "upload",
+            status: "pending",
+            progress: 0,
+            speed: "0 KB/s",
+            bytesSent: 0,
+            lastTickBytes: 0,
+            lastTickAt: performance.now(),
+            retryCount: 0,
+            file: null, // Will be set by file picker
+
+            // Clean state
+            _stopCurrentLoop: false,
+            _loopRunning: false,
+            _loopId: null,
+            _waitingForAck: false,
+            _resuming: false,
+
+            // Mark as current session
+            isPreviousSession: false,
+            isCurrentSession: true,
+          };
+
+          this.showNotification(
+            "Please select the file again to re-upload",
+            "warning"
+          );
+          this.triggerFilePickerForRestart(transfer, newTransfer);
+          return;
+        }
+      }
+    } else if (transfer.type === "download") {
+      // Reset download state
+      transfer.status = "pending";
+      transfer.progress = 0;
+      transfer.bytesReceived = 0;
+      transfer.speed = "0 KB/s";
+      delete transfer.error;
+
+      this.showNotification(`Restarting download: ${transfer.name}`, "info");
+      this.renderTransfers();
+      this.startTransfer(transfer);
+    }
+  }
+
+  // Helper method to trigger file picker for restart
+  triggerFilePickerForRestart(originalTransfer, newTransfer) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "*/*";
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (
+        file &&
+        file.name === originalTransfer.name &&
+        file.size === originalTransfer.size
+      ) {
+        newTransfer.file = file;
+        this.transfers.push(newTransfer);
+        this.showNotification(`Added ${file.name} to upload queue`, "success");
+        this.renderTransfers();
+        this.maybeStartNextUploads();
+      } else if (file) {
+        this.showNotification(
+          `File mismatch. Expected: ${
+            originalTransfer.name
+          } (${this.formatFileSize(originalTransfer.size)})`,
+          "error"
+        );
+      }
+    };
+    input.click();
+  }
+
+  // FIX: Add remove functionality for completed/stopped files
+  async removeTransfer(transfer) {
+    if (!transfer) {
+      console.warn("removeTransfer called with invalid transfer");
+      return;
+    }
+
+    console.log(
+      "REMOVE: Attempting to remove:",
+      transfer.name,
+      "status:",
+      transfer.status
+    );
+
+    // Only allow removal of completed, stopped, or error states
+    if (!["completed", "stopped", "error"].includes(transfer.status)) {
+      this.showNotification(
+        "Can only remove completed, stopped, or failed transfers",
+        "warning"
+      );
+      return;
+    }
+
+    // Show confirmation for important files
+    if (transfer.isPreviousSession || transfer.status === "completed") {
+      const confirmMsg = `Delete "${transfer.name}"?\n\nThis will move the file to recycle bin. You can restore it later if needed.`;
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+    }
+
+    // FIX: If this is a previous session file (has fileId), delete from server database
+    if (transfer.isPreviousSession && transfer.fileId) {
+      try {
+        console.log(
+          "REMOVE: Deleting from server database, fileId:",
+          transfer.fileId
+        );
+        console.log(
+          "REMOVE: Using auth token:",
+          this.authToken ? this.authToken.substring(0, 20) + "..." : "None"
+        );
+
+        const response = await fetch(
+          `http://localhost:5000/api/files/${transfer.fileId}`,
+          {
+            method: "DELETE",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${this.authToken}`,
+            },
+          }
+        );
+
+        console.log(
+          "REMOVE: Response status:",
+          response.status,
+          response.statusText
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("REMOVE: Server error response:", errorText);
+          throw new Error(
+            `Server responded with ${response.status}: ${response.statusText}`
+          );
+        }
+
+        const result = await response.json();
+        console.log("REMOVE: Server response:", result);
+
+        this.showNotification(
+          `Moved "${transfer.name}" to recycle bin`,
+          "success"
+        );
+      } catch (error) {
+        console.error("REMOVE: Error deleting from server:", error);
+        this.showNotification(
+          `Failed to delete from server: ${error.message}`,
+          "error"
+        );
+        return; // Don't remove from frontend if server deletion failed
+      }
+    }
+
+    // Remove from transfers array
+    const index = this.transfers.findIndex((t) => t.id === transfer.id);
+    if (index > -1) {
+      this.transfers.splice(index, 1);
+
+      // Remove from sessionStorage as well
+      this.removeFileFromSession(transfer.id, transfer.name);
+
+      // Only show notification if we didn't delete from server (to avoid double notifications)
+      if (!transfer.isPreviousSession || !transfer.fileId) {
+        this.showNotification(
+          `Removed "${transfer.name}" from list`,
+          "success"
+        );
+      }
+
+      this.renderTransfers();
+      this.updateStatusCards();
+      await this.refreshDashboardStats(); // FIX: Refresh real stats after deletion
+
+      console.log(
+        "REMOVE: Successfully removed transfer. Remaining transfers:",
+        this.transfers.length
+      );
+    } else {
+      console.warn("REMOVE: Transfer not found in array");
+      this.showNotification("Transfer not found", "error");
     }
   }
 
@@ -1786,6 +3052,28 @@ class FlexTransferHub {
     }, 3000);
   }
 
+  // Format upload time cho display
+  formatUploadTime(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24)
+      return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+
+    // For older files, show actual date
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    });
+  }
+
   // Trả về số upload đang active
   countActiveUploads() {
     return this.transfers.filter(
@@ -1803,11 +3091,28 @@ class FlexTransferHub {
         t.type === "upload" && (t.status === "pending" || t.status === "queued")
     );
 
-    if (pendingList.length > 0 && active === 0) {
-      this.showNotification(
-        `Bắt đầu upload đồng thời tối đa ${this.maxConcurrentUploads} files`,
-        "info"
-      );
+    if (pendingList.length > 0) {
+      const slotsAvailable = this.maxConcurrentUploads - active;
+      const willStart = Math.min(pendingList.length, slotsAvailable);
+      const remainInQueue = pendingList.length - willStart;
+
+      if (active === 0) {
+        // Lần đầu bắt đầu uploads
+        this.showNotification(
+          `Bắt đầu upload ${willStart} files đồng thời${
+            remainInQueue > 0 ? `, ${remainInQueue} files chờ trong queue` : ""
+          }`,
+          "info"
+        );
+      } else if (willStart > 0) {
+        // Bắt đầu uploads từ queue sau khi có slot trống
+        this.showNotification(
+          `Bắt đầu upload ${willStart} files từ queue${
+            remainInQueue > 0 ? `, còn ${remainInQueue} files chờ` : ""
+          }`,
+          "info"
+        );
+      }
     }
 
     for (const t of pendingList) {
@@ -1820,7 +3125,7 @@ class FlexTransferHub {
 
 // Initialize the application when DOM is loaded
 document.addEventListener("DOMContentLoaded", () => {
-  new FlexTransferHub();
+  window.flexTransferHub = new FlexTransferHub();
 });
 
 // Export for potential module usage
