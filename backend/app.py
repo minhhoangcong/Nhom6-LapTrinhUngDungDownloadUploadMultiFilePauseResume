@@ -173,7 +173,7 @@ def main():
         elif args.mode == "client":
             logger.info("Running client only mode")
             asyncio.run(run_client(args.ws_url, file_paths, args.file_id, args.chunk, args.interactive))
-        else:
+        else:  # both
             logger.info("Running both server and client mode")
             asyncio.run(run_both(args.host, args.port, args.ws_url, file_paths, args.file_id, args.chunk, args.interactive))
     except KeyboardInterrupt:

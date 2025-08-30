@@ -288,6 +288,7 @@ async def upload_many(ws_url: str, files: Iterable[str], concurrency: int = 2, c
             else:
                 failed_files.append(file_path)
             
+            # Log progress
             progress = (completed_files + len(failed_files)) / total_files * 100
             logger.info("Progress: %d/%d files completed (%.1f%%)", 
                        completed_files + len(failed_files), total_files, progress)
@@ -296,6 +297,7 @@ async def upload_many(ws_url: str, files: Iterable[str], concurrency: int = 2, c
             logger.error("Task failed for %s: %s", file_path, e)
             failed_files.append(file_path)
     
+    # Summary
     logger.info("Batch upload completed: %d/%d files successful", completed_files, total_files)
     if failed_files:
         logger.warning("Failed files (%d):", len(failed_files))
