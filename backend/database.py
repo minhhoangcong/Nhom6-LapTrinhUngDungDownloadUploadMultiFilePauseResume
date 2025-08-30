@@ -163,7 +163,7 @@ class FileDatabase:
                 conn.row_factory = sqlite3.Row
                 
                 # Build query với user filtering
-                where_conditions = ["status != 'deleted'"]
+                where_conditions = ["status != 'deleted'"]  # FIX: Exclude deleted files
                 params = []
                 
                 if status:
@@ -187,7 +187,9 @@ class FileDatabase:
                 logger.info(f"Executing query: {query} with params: {params}")
                 cursor = conn.execute(query, params)
                 results = cursor.fetchall()
-                logger.info(f"Query returned {len(results)} files")           
+                logger.info(f"Query returned {len(results)} files")
+                
+                # Debug: show first few results
                 for i, row in enumerate(results[:3]):
                     logger.info(f"File {i+1}: ID={row['id']}, filename={row['filename']}, user_id={row['user_id']}, status={row['status']}")
                 
@@ -198,7 +200,8 @@ class FileDatabase:
     
     def get_user_files(self, user_id, status=None):
         """Lấy tất cả files của một user cụ thể"""
-        return self.get_all_files(status=status, user_id=user_id) 
+        return self.get_all_files(status=status, user_id=user_id)
+    
     def get_files_by_folder(self, folder_id, user_id=None):
         """Lấy tất cả files trong một folder cụ thể"""
         try:
@@ -354,6 +357,7 @@ class FileDatabase:
         """Dọn dẹp các file tạm cũ (có thể chạy định kỳ)"""
         try:
             with sqlite3.connect(self.db_path) as conn:
+                # Xóa các file uploading cũ hơn 24h
                 conn.execute("""
                     DELETE FROM files 
                     WHERE status = 'uploading' 
@@ -370,6 +374,8 @@ class FileDatabase:
         except sqlite3.Error as e:
             logger.error(f"Error cleaning up temp files: {e}")
             return 0
+    
+    # ==================== RECYCLE BIN METHODS ====================
     
     def move_to_recycle_bin(self, file_id, deleted_by_user_id, days_to_keep=30):
         """Di chuyển file vào thùng rác"""
@@ -576,4 +582,5 @@ class FileDatabase:
             logger.error(f"Error cleaning up expired recycle files: {e}")
             return []
 
+# Global database instance
 db = FileDatabase()

@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import aiohttp
 import aiofiles
 
@@ -14,6 +14,14 @@ import websockets
 from websockets.server import WebSocketServerProtocol
 from logger import setup_logger
 from database import db
+
+# Import auth database để verify tokens
+try:
+    from auth_database import AuthDatabase
+    auth_db = AuthDatabase()
+except ImportError:
+    auth_db = None
+    print("Warning: AuthDatabase not available")
 
 # Thiết lập logger cho server
 logger = setup_logger("server")
@@ -41,6 +49,8 @@ class UploadSession:
     remote_file_id: Optional[str] = None
     file_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     db_id: Optional[int] = None  # ID từ SQLite database
+    user_id: Optional[int] = None  # ID của user upload
+    user_token: Optional[str] = None  # Auth token của user
 
     def temp_path(self) -> Path:
     # session.temp_file_path: .../temp_uploads/<file-id>_<name>
@@ -264,15 +274,41 @@ class UploadManager:
     def __init__(self) -> None:
         self.file_id_to_session: Dict[str, UploadSession] = {}
         self.connection_to_sessions: Dict[WebSocketServerProtocol, Dict[str, UploadSession]] = {}
+        self.connection_auth: Dict[WebSocketServerProtocol, dict] = {}  # Store auth info per connection
         logger.info("UploadManager initialized with remote upload capability")
 
     def register_connection(self, ws: WebSocketServerProtocol) -> None:
         if ws not in self.connection_to_sessions:
             self.connection_to_sessions[ws] = {}
+        if ws not in self.connection_auth:
+            self.connection_auth[ws] = {'authenticated': False, 'user': None, 'token': None}
         logger.debug("Connection registered: %s", ws.remote_address)
+
+    def authenticate_connection(self, ws: WebSocketServerProtocol, token: str, user: dict) -> bool:
+        """Authenticate a WebSocket connection"""
+        if not auth_db or not token:
+            return False
+            
+        # Verify token với auth database
+        verified_user = auth_db.get_user_by_token(token)
+        if verified_user:
+            self.connection_auth[ws] = {
+                'authenticated': True,
+                'user': verified_user,
+                'token': token
+            }
+            # logger.debug(f"Connection authenticated: {ws.remote_address} as {verified_user['username']}")
+            return True
+        
+        return False
+
+    def get_connection_auth(self, ws: WebSocketServerProtocol) -> dict:
+        """Lấy thông tin authentication của connection"""
+        return self.connection_auth.get(ws, {'authenticated': False, 'user': None, 'token': None})
 
     def unregister_connection(self, ws: WebSocketServerProtocol) -> None:
         sessions = self.connection_to_sessions.pop(ws, {})
+        self.connection_auth.pop(ws, None)  # Clean up auth info
         for session in sessions.values():
             if session.status == "active":
                 session.status = "paused"
@@ -280,14 +316,26 @@ class UploadManager:
                            session.file_id, session.file_name)
         logger.debug("Connection unregistered: %s", ws.remote_address)
 
-    def get_or_create_session(self, file_id: str, file_name: str, file_size: int) -> UploadSession:
+    def get_or_create_session(self, ws: WebSocketServerProtocol, file_id: str, file_name: str, file_size: int) -> UploadSession:
         safe_name = os.path.basename(file_name)
         temp_path = TEMP_DIR / f"{file_id}_{safe_name}"
+
+        # Get auth info
+        auth_info = self.get_connection_auth(ws)
+        
+        # FIX: Require authentication for new uploads
+        if not auth_info['authenticated']:
+            logger.warning("Attempted upload without authentication: %s", ws.remote_address)
+            raise ValueError("Authentication required for file upload")
 
         existing = self.file_id_to_session.get(file_id)
         if existing:
             existing.file_name = safe_name
             existing.file_size = file_size
+            # Update auth info if not set
+            if not existing.user_id and auth_info['authenticated']:
+                existing.user_id = auth_info['user']['id']
+                existing.user_token = auth_info['token']
             existing.temp_file_path = temp_path
             if existing.temp_path().exists():
                 existing.bytes_received = existing.temp_path().stat().st_size
@@ -301,6 +349,8 @@ class UploadManager:
             status="active",
             bytes_received=0,
             temp_file_path=temp_path,
+            user_id=auth_info['user']['id'],  # FIX: Always require authenticated user
+            user_token=auth_info['token']
         )
         
         if session.temp_path().exists():
@@ -385,14 +435,20 @@ class UploadManager:
                 "message": "Uploading to remote server..."
             })
             
-            # Chuẩn bị headers
+            # Chuẩn bị headers với user authentication
             headers = {
-                'Authorization': f'Bearer {REMOTE_SERVER_TOKEN}',
                 'Content-Type': 'application/octet-stream',
                 'X-File-Name': session.file_name,
                 'X-File-Size': str(session.file_size),
                 'X-File-ID': session.file_id
             }
+            
+            # Sử dụng user token thay vì REMOTE_SERVER_TOKEN
+            if session.user_token:
+                headers['Authorization'] = f'Bearer {session.user_token}'
+            else:
+                # Fallback to old token for backward compatibility
+                headers['Authorization'] = f'Bearer {REMOTE_SERVER_TOKEN}'
             
             # Gửi file đến remote server
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None)) as http_session:
@@ -416,9 +472,17 @@ class UploadManager:
                             logger.info("File uploaded to remote server successfully: %s, remote_id=%s", 
                                     session.file_id, session.remote_file_id)
                             
-                            # Thông báo cho client rằng file đã hoàn thành
+                            # Thông báo cho client rằng file đã hoàn thành - gửi cả 2 events để đảm bảo
                             await self.broadcast_to_session(session, {
                                 "event": "completed",
+                                "fileId": session.file_id,
+                                "remoteFileId": session.remote_file_id,
+                                "status": "completed"
+                            })
+                            
+                            # Gửi thêm complete-ack để đảm bảo frontend nhận được
+                            await self.broadcast_to_session(session, {
+                                "event": "complete-ack",
                                 "fileId": session.file_id,
                                 "remoteFileId": session.remote_file_id,
                                 "status": "completed"
@@ -467,7 +531,7 @@ class UploadManager:
             await self.send_error(ws, file_id, "Invalid start payload")
             return
 
-        session = self.get_or_create_session(file_id, file_name, file_size)
+        session = self.get_or_create_session(ws, file_id, file_name, file_size)
         session.status = "active"
 
         self.register_connection(ws)
@@ -698,23 +762,62 @@ download_manager = DownloadManager()
 
 async def handler(ws: WebSocketServerProtocol, path: str) -> None:
     # Accept any path but recommend "/ws"
-    logger.info("Client connected from %s path=%s", ws.remote_address, path)
+    # logger.debug("Client connected from %s path=%s", ws.remote_address, path)
     # Register connection for per-connection session tracking
     manager.register_connection(ws)
     try:
         async for message in ws:
+            # SECURITY FIX: Message size validation
+            if len(message) > 10 * 1024 * 1024:  # 10MB limit
+                logger.warning("Message too large from %s: %d bytes", ws.remote_address, len(message))
+                await manager.send_error(ws, None, "Message too large")
+                continue
+                
             try:
                 data = json.loads(message)
             except json.JSONDecodeError:
                 logger.warning("Invalid JSON received from %s: %s", ws.remote_address, message[:100])
                 await manager.send_error(ws, None, "Invalid JSON")
                 continue
+            
+            # SECURITY FIX: Message structure validation
+            if not isinstance(data, dict):
+                logger.warning("Invalid message format from %s", ws.remote_address)
+                await manager.send_error(ws, None, "Invalid message format")
+                continue
 
             action = data.get("action")
-            logger.debug("Received action '%s' from %s", action, ws.remote_address)
+            message_type = data.get("type")  # For non-action messages like auth
+            logger.debug("Received action '%s' type '%s' from %s", action, message_type, ws.remote_address)
+            
+            # Handle authentication
+            if message_type == "auth":
+                token = data.get("token")
+                user = data.get("user")
+                
+                if manager.authenticate_connection(ws, token, user):
+                    await ws.send(json.dumps({
+                        'event': 'auth-success',
+                        'message': f'Authenticated as {user.get("username", "unknown")}'
+                    }))
+                else:
+                    await ws.send(json.dumps({
+                        'event': 'auth-error',
+                        'message': 'Authentication failed'
+                    }))
+                continue
             
             # Upload actions
             if action == "start":
+                # Check authentication for uploads
+                auth_info = manager.get_connection_auth(ws)
+                if not auth_info['authenticated']:
+                    await ws.send(json.dumps({
+                        'event': 'error',
+                        'error': 'Authentication required for upload'
+                    }))
+                    continue
+                    
                 await manager.handle_start(ws, data)
             elif action == "chunk":
                 await manager.handle_chunk(ws, data)
