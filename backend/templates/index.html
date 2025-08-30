@@ -1,0 +1,3056 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlexTransfer Hub - File Manager</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📁</text></svg>"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        color: #333;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 30px;
+        margin-bottom: 30px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      }
+
+      .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .user-info {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+      }
+
+      .user-greeting {
+        color: #4a5568;
+        font-size: 1rem;
+      }
+
+      .user-role {
+        color: #718096;
+        font-size: 0.8rem;
+        padding: 2px 8px;
+        background: #e2e8f0;
+        border-radius: 12px;
+        text-transform: uppercase;
+        font-weight: 500;
+      }
+
+      .admin-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+        text-decoration: none;
+      }
+
+      .admin-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .admin-btn.hidden {
+        display: none !important;
+      }
+
+      .logout-btn {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .logout-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
+      }
+
+      .header-text {
+        text-align: left;
+      }
+
+      .header h1 {
+        font-size: 2.5rem;
+        color: #4a5568;
+        margin-bottom: 10px;
+      }
+
+      .header p {
+        color: #718096;
+        font-size: 1.1rem;
+      }
+
+      .upload-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: white;
+        padding: 14px 20px;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+      }
+
+      .upload-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+      }
+
+      .upload-btn svg {
+        transition: transform 0.3s ease;
+      }
+
+      .upload-btn:hover svg {
+        transform: scale(1.1);
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+
+      .stat-card {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 25px;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s ease;
+      }
+
+      .stat-card:hover {
+        transform: translateY(-5px);
+      }
+
+      .stat-number {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #667eea;
+        margin-bottom: 10px;
+      }
+
+      .stat-label {
+        color: #718096;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .main-content {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      }
+
+      .toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+        gap: 15px;
+      }
+
+      .btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 25px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        display: inline-block;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .btn-secondary {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      }
+
+      .btn-danger {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+      }
+
+      .search-box {
+        flex: 1;
+        max-width: 400px;
+        position: relative;
+      }
+
+      .search-box input {
+        width: 100%;
+        padding: 12px 20px;
+        border: 2px solid #e2e8f0;
+        border-radius: 25px;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+      }
+
+      .search-box input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .toolbar-actions {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+      }
+
+      .view-toggle {
+        display: flex;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: 12px;
+        padding: 4px;
+        backdrop-filter: blur(10px);
+      }
+
+      .view-btn {
+        background: none;
+        border: none;
+        padding: 8px;
+        border-radius: 8px;
+        color: #667eea;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .view-btn:hover {
+        background: rgba(102, 126, 234, 0.1);
+      }
+
+      .view-btn.active {
+        background: #667eea;
+        color: white;
+      }
+
+      .tabs {
+        display: flex;
+        border-bottom: 2px solid #e2e8f0;
+        margin-bottom: 30px;
+      }
+
+      .tab {
+        padding: 15px 30px;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s ease;
+        font-weight: 500;
+      }
+
+      .tab.active {
+        border-bottom-color: #667eea;
+        color: #667eea;
+      }
+
+      .tab:hover {
+        background: rgba(102, 126, 234, 0.1);
+      }
+
+      .file-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 15px;
+        max-height: 600px;
+        overflow-y: auto;
+        padding-right: 8px;
+
+        /* Custom scrollbar */
+        scrollbar-width: thin;
+        scrollbar-color: #667eea #e2e8f0;
+      }
+
+      .file-grid::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .file-grid::-webkit-scrollbar-track {
+        background: #e2e8f0;
+        border-radius: 4px;
+      }
+
+      .file-grid::-webkit-scrollbar-thumb {
+        background: #667eea;
+        border-radius: 4px;
+      }
+
+      .file-grid::-webkit-scrollbar-thumb:hover {
+        background: #5a67d8;
+      }
+
+      /* List view layout */
+      .file-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 600px;
+        overflow-y: auto;
+        padding-right: 8px;
+      }
+
+      .file-list::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .file-list::-webkit-scrollbar-track {
+        background: #e2e8f0;
+        border-radius: 4px;
+      }
+
+      .file-list::-webkit-scrollbar-thumb {
+        background: #667eea;
+        border-radius: 4px;
+      }
+
+      .file-list .file-card {
+        display: flex;
+        align-items: center;
+        padding: 15px 20px;
+        margin-bottom: 0;
+      }
+
+      .file-list .file-icon {
+        margin-bottom: 0;
+        margin-right: 15px;
+        width: 40px;
+        height: 40px;
+      }
+
+      .file-list .file-details {
+        flex: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .file-list .file-info {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .file-list .file-meta {
+        font-size: 0.85rem;
+        color: #718096;
+        margin-top: 4px;
+      }
+
+      .file-list .file-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .file-list .primary-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .file-list .more-actions {
+        position: relative;
+      }
+
+      .file-list .file-name-editable {
+        position: relative;
+        flex: 1;
+      }
+
+      .file-card {
+        background: white;
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+      }
+
+      .file-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        border-color: #667eea;
+      }
+
+      .file-icon {
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 15px;
+        color: white;
+        font-size: 1.5rem;
+      }
+
+      .file-name {
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 10px;
+        word-break: break-word;
+      }
+
+      .file-info {
+        color: #718096;
+        font-size: 0.85rem;
+        margin-bottom: 15px;
+      }
+
+      .file-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      /* Primary actions - always visible */
+      .primary-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      /* More actions dropdown */
+      .more-actions {
+        position: relative;
+      }
+
+      .more-btn {
+        background: #f8f9fa;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 16px;
+        color: #64748b;
+        transition: all 0.2s ease;
+      }
+
+      .more-btn:hover {
+        background: #e2e8f0;
+        color: #334155;
+      }
+
+      .dropdown-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 150px;
+        z-index: 1000;
+        display: none;
+        overflow: hidden;
+      }
+
+      .dropdown-menu.show {
+        display: block;
+      }
+
+      .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+        font-size: 14px;
+        color: #374151;
+        transition: background-color 0.2s ease;
+      }
+
+      .dropdown-item:hover {
+        background: #f3f4f6;
+      }
+
+      .dropdown-item.danger:hover {
+        background: #fef2f2;
+        color: #dc2626;
+      }
+
+      /* Inline edit for rename */
+      .file-name-editable {
+        position: relative;
+      }
+
+      .file-name-input {
+        display: none;
+        background: white;
+        border: 2px solid #3b82f6;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: inherit;
+        font-weight: inherit;
+        width: 100%;
+        outline: none;
+      }
+
+      .file-name-input.active {
+        display: block;
+      }
+
+      .file-name-input.active + .file-name {
+        display: none;
+      }
+
+      .rename-actions {
+        display: none;
+        align-items: center;
+        gap: 4px;
+        margin-top: 4px;
+      }
+
+      .rename-actions.active {
+        display: flex;
+      }
+
+      .rename-btn {
+        padding: 4px 8px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.2s ease;
+      }
+
+      .rename-btn.save {
+        background: #10b981;
+        color: white;
+      }
+
+      .rename-btn.cancel {
+        background: #ef4444;
+        color: white;
+      }
+
+      .rename-btn:hover {
+        opacity: 0.8;
+      }
+
+      .btn-small {
+        padding: 8px 16px;
+        font-size: 0.8rem;
+      }
+
+      .btn-preview {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+        border: none;
+        transition: all 0.3s ease;
+      }
+
+      .btn-preview:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(79, 172, 254, 0.4);
+      }
+
+      .folder-card {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+      }
+
+      .folder-card .file-icon {
+        background: rgba(255, 255, 255, 0.2);
+      }
+
+      .folder-card .file-name,
+      .folder-card .file-info {
+        color: white;
+      }
+
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(5px);
+      }
+
+      .modal-content {
+        background-color: white;
+        margin: 10% auto;
+        padding: 30px;
+        border-radius: 20px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .close {
+        color: #aaa;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      .close:hover {
+        color: #000;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #4a5568;
+      }
+
+      .form-group select {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        background: white;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+        background-position: right 12px center;
+        background-repeat: no-repeat;
+        background-size: 16px;
+        appearance: none;
+        cursor: pointer;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      }
+
+      .form-group select:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1),
+          0 4px 8px rgba(0, 0, 0, 0.1);
+        transform: translateY(-1px);
+      }
+
+      .form-group select:hover {
+        border-color: #c7d2fe;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+        transform: translateY(-1px);
+      }
+
+      /* Custom styling for folder options */
+      .form-group select option {
+        padding: 12px 16px;
+        background: white;
+        color: #374151;
+        font-size: 0.95rem;
+        border-bottom: 1px solid #f3f4f6;
+      }
+
+      .form-group select option:hover {
+        background: linear-gradient(90deg, #f8fafc 0%, #f1f5f9 100%);
+        color: #1e40af;
+      }
+
+      /* Special styling for Root option */
+      .form-group select option[value=""] {
+        color: #059669;
+        font-weight: 500;
+        background: linear-gradient(90deg, #ecfdf5 0%, #f0fdf4 100%);
+      }
+
+      /* Style for folder hierarchy indicators */
+      .folder-option-root {
+        background: linear-gradient(90deg, #fef3c7 0%, #fef9c3 100%);
+        color: #92400e;
+        font-weight: 500;
+      }
+
+      .folder-option-child {
+        background: linear-gradient(90deg, #dbeafe 0%, #e0f2fe 100%);
+        color: #1e40af;
+        padding-left: 32px !important;
+        position: relative;
+      }
+
+      /* Add subtle animation to form labels */
+      .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #374151;
+        transition: color 0.2s ease;
+        font-size: 0.95rem;
+      }
+
+      .form-group:focus-within label {
+        color: #667eea;
+      }
+
+      .form-group input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+      }
+
+      .form-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #718096;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #718096;
+      }
+
+      .empty-state h3 {
+        margin-bottom: 15px;
+        color: #4a5568;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 15px;
+        }
+
+        .header {
+          padding: 20px;
+        }
+
+        .header h1 {
+          font-size: 2rem;
+        }
+
+        .toolbar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .search-box {
+          max-width: none;
+        }
+
+        .file-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .file-list .file-card {
+          flex-direction: column;
+          align-items: flex-start;
+          text-align: left;
+        }
+
+        .file-list .file-icon {
+          margin-right: 0;
+          margin-bottom: 10px;
+        }
+
+        .file-list .file-details {
+          width: 100%;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .file-list .file-actions {
+          width: 100%;
+          justify-content: flex-end;
+        }
+
+        .toolbar-actions {
+          flex-direction: column;
+          gap: 10px;
+          align-items: stretch;
+        }
+
+        .view-toggle {
+          align-self: center;
+        }
+      }
+
+      /* Context Menu */
+      .context-menu {
+        position: fixed;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        display: none;
+        min-width: 180px;
+      }
+
+      .context-item {
+        padding: 12px 16px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background-color 0.2s;
+      }
+
+      .context-item:hover {
+        background-color: #f8f9fa;
+      }
+
+      .context-item:last-child {
+        border-bottom: none;
+      }
+
+      .context-item.danger {
+        color: #dc3545;
+      }
+
+      .context-item.danger:hover {
+        background-color: #ffebee;
+      }
+
+      /* File item hover effect */
+      .file-item:hover {
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
+      }
+
+      .file-item {
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      /* Breadcrumb Navigation */
+      .breadcrumb {
+        background: rgba(102, 126, 234, 0.1);
+        padding: 12px 20px;
+        border-radius: 10px;
+        margin: 20px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .breadcrumb-item {
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 500;
+      }
+
+      .breadcrumb-item:hover {
+        background: rgba(102, 126, 234, 0.2);
+        color: #667eea;
+      }
+
+      .breadcrumb-item.active {
+        background: #667eea;
+        color: white;
+      }
+
+      .breadcrumb-separator {
+        color: #999;
+        margin: 0 4px;
+      }
+
+      /* Preview Modal Styles */
+      .preview-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        z-index: 10000;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: all 0.3s ease;
+      }
+
+      .preview-modal.active {
+        display: flex;
+        opacity: 1;
+      }
+
+      .preview-content {
+        background: white;
+        border-radius: 20px;
+        max-width: 90vw;
+        max-height: 90vh;
+        position: relative;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+        transform: scale(0.9);
+        transition: transform 0.3s ease;
+      }
+
+      .preview-modal.active .preview-content {
+        transform: scale(1);
+      }
+
+      .preview-header {
+        padding: 20px 30px;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+
+      .preview-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
+        max-width: 70%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .preview-close {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 10px;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+      }
+
+      .preview-close:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: rotate(90deg);
+      }
+
+      .preview-body {
+        padding: 30px;
+        text-align: center;
+        max-height: calc(90vh - 120px);
+        overflow: auto;
+      }
+
+      /* Preview content types */
+      .preview-image {
+        max-width: 100%;
+        max-height: calc(90vh - 200px);
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      }
+
+      .preview-pdf {
+        width: 100%;
+        height: calc(90vh - 200px);
+        border: none;
+        border-radius: 10px;
+      }
+
+      .preview-video {
+        max-width: 100%;
+        max-height: calc(90vh - 200px);
+        border-radius: 10px;
+      }
+
+      .preview-audio {
+        width: 100%;
+        max-width: 400px;
+      }
+
+      .preview-text {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: left;
+        font-family: "Consolas", "Monaco", monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        max-height: calc(90vh - 220px);
+        overflow: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+
+      .preview-download {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        padding: 40px;
+      }
+
+      .preview-icon {
+        width: 100px;
+        height: 100px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 48px;
+        color: white;
+      }
+
+      .preview-download-info {
+        text-align: center;
+      }
+
+      .preview-download-info h3 {
+        color: #333;
+        margin: 0 0 10px 0;
+        font-size: 20px;
+      }
+
+      .preview-download-info p {
+        color: #666;
+        margin: 5px 0;
+        font-size: 16px;
+      }
+
+      .preview-download-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        border-radius: 25px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .preview-download-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+      }
+
+      .preview-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        padding: 50px;
+      }
+
+      .preview-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="header-content">
+          <div class="header-text">
+            <h1>📁 FlexTransfer Hub</h1>
+            <p>Quản lý files và folders đã upload</p>
+          </div>
+          <div class="header-actions">
+            <div class="user-info">
+              <span class="user-greeting"
+                >👋 Xin chào, <strong id="username"></strong
+              ></span>
+              <span class="user-role" id="userRole"></span>
+            </div>
+            <a href="/admin" class="admin-btn hidden" id="adminBtn">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11.03L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11.03C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
+                />
+              </svg>
+              <span>Admin Panel</span>
+            </a>
+            <button
+              class="upload-btn"
+              onclick="window.location.replace('http://localhost:8000')"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"
+                />
+              </svg>
+              <span>Upload Files</span>
+            </button>
+            <button class="logout-btn" onclick="logout()">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2H14Z"
+                />
+              </svg>
+              Đăng xuất
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="total-files">0</div>
+          <div class="stat-label">Tổng Files</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="total-folders">0</div>
+          <div class="stat-label">Tổng Folders</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="total-size">0 MB</div>
+          <div class="stat-label">Tổng Dung Lượng</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="file-types">0</div>
+          <div class="stat-label">Loại Files</div>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <div class="toolbar">
+          <div class="search-box">
+            <input
+              type="text"
+              id="search-input"
+              placeholder="Tìm kiếm files và folders..."
+            />
+          </div>
+          <div class="toolbar-actions">
+            <div class="view-toggle">
+              <button
+                class="view-btn active"
+                id="grid-view"
+                onclick="switchView('grid')"
+                title="Grid View"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path
+                    d="M4 11h5V5H4v6zm0 7h5v-6H4v6zm6 0h5v-6h-5v6zm6 0h5v-6h-5v6zm-6-7h5V5h-5v6zm6-6v6h5V5h-5z"
+                  />
+                </svg>
+              </button>
+              <button
+                class="view-btn"
+                id="list-view"
+                onclick="switchView('list')"
+                title="List View"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path
+                    d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
+                  />
+                </svg>
+              </button>
+            </div>
+            <button class="btn" onclick="openCreateFolderModal()">
+              📁 Tạo Folder
+            </button>
+            <button
+              class="btn"
+              onclick="toggleRecycleBin()"
+              style="
+                background: linear-gradient(135deg, #e17055 0%, #d63031 100%);
+                color: white;
+              "
+            >
+              🗑️ Thùng rác
+            </button>
+            <button class="btn btn-secondary" onclick="goToUploadPage()">
+              🔄 Quay lại Upload
+            </button>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('all')">Tất cả</div>
+          <div class="tab" onclick="switchTab('files')">Files</div>
+          <div class="tab" onclick="switchTab('folders')">Folders</div>
+        </div>
+
+        <!-- Breadcrumb Navigation -->
+        <div id="breadcrumb" class="breadcrumb">
+          <span class="breadcrumb-item active" onclick="navigateToFolder(null)">
+            🏠 Trang chủ
+          </span>
+        </div>
+
+        <div id="content">
+          <div class="loading">Đang tải...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal tạo folder -->
+    <div id="createFolderModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>📁 Tạo Folder Mới</h3>
+          <span class="close" onclick="closeCreateFolderModal()">&times;</span>
+        </div>
+        <div class="form-group">
+          <label for="folderName">📁 Tên Thư Mục:</label>
+          <input
+            type="text"
+            id="folderName"
+            placeholder="✨ Nhập tên thư mục mới..."
+          />
+        </div>
+        <div class="form-group">
+          <label for="parentFolder">🗂️ Tạo Trong Thư Mục:</label>
+          <select id="parentFolder">
+            <option value="">📁 Root (Thư mục gốc)</option>
+          </select>
+        </div>
+        <div style="text-align: right">
+          <button class="btn btn-secondary" onclick="closeCreateFolderModal()">
+            Hủy
+          </button>
+          <button class="btn" onclick="createFolder()">Tạo Folder</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal move file vào folder -->
+    <div id="moveFileModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>📁 Di chuyển File vào Folder</h3>
+          <span class="close" onclick="closeMoveFileModal()">&times;</span>
+        </div>
+        <div class="form-group">
+          <label
+            >📄 File:
+            <span
+              id="moveFileName"
+              style="font-weight: bold; color: #1f2937"
+            ></span
+          ></label>
+          <label for="targetFolder">📂 Chọn Thư Mục Đích:</label>
+          <select id="targetFolder">
+            <option value="">-- Chọn folder --</option>
+          </select>
+        </div>
+        <div style="text-align: right">
+          <button class="btn btn-secondary" onclick="closeMoveFileModal()">
+            Hủy
+          </button>
+          <button class="btn" onclick="confirmMoveFile()">Di chuyển</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="context-menu">
+      <div class="context-item" onclick="moveFileToFolder()">
+        📁 Di chuyển vào Folder
+      </div>
+      <div class="context-item" onclick="downloadSelectedFile()">
+        💾 Download
+      </div>
+      <div class="context-item danger" onclick="deleteSelectedFile()">
+        🗑️ Xóa
+      </div>
+    </div>
+
+    <!-- Recycle Bin Modal -->
+    <div id="recycleBinModal" class="preview-modal">
+      <div class="preview-content" style="max-width: 95%; max-height: 90%">
+        <div class="preview-header">
+          <h3 class="preview-title">🗑️ Thùng rác của tôi</h3>
+          <button id="recycleBinClose" class="preview-close">&times;</button>
+        </div>
+        <div class="preview-body">
+          <div style="margin-bottom: 20px">
+            <p style="color: #666; margin-bottom: 15px">
+              Files được giữ trong thùng rác 7 ngày trước khi bị xóa vĩnh viễn.
+            </p>
+            <input
+              type="text"
+              placeholder="🔍 Tìm kiếm file..."
+              id="recycleBinSearch"
+              style="
+                width: 100%;
+                padding: 12px;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                margin-bottom: 20px;
+              "
+              onkeyup="filterUserRecycleFiles()"
+            />
+          </div>
+          <div style="max-height: 60vh; overflow: auto">
+            <table style="width: 100%; border-collapse: collapse">
+              <thead>
+                <tr style="background: #f8f9fa">
+                  <th
+                    style="
+                      padding: 12px;
+                      text-align: left;
+                      border-bottom: 2px solid #e0e0e0;
+                    "
+                  >
+                    Tên file
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      text-align: left;
+                      border-bottom: 2px solid #e0e0e0;
+                    "
+                  >
+                    Kích thước
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      text-align: left;
+                      border-bottom: 2px solid #e0e0e0;
+                    "
+                  >
+                    Ngày xóa
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      text-align: left;
+                      border-bottom: 2px solid #e0e0e0;
+                    "
+                  >
+                    Hạn khôi phục
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      text-align: center;
+                      border-bottom: 2px solid #e0e0e0;
+                    "
+                  >
+                    Thao tác
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="recycleBinTableBody">
+                <!-- Recycle bin files will be loaded here -->
+              </tbody>
+            </table>
+            <div
+              id="recycleBinEmpty"
+              style="
+                text-align: center;
+                padding: 40px;
+                color: #666;
+                display: none;
+              "
+            >
+              <div style="font-size: 3rem; margin-bottom: 20px">🗑️</div>
+              <p>Thùng rác trống</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let currentTab = "all";
+      let viewMode = "grid"; // 'grid' hoặc 'list'
+      let allFiles = [];
+      let allFolders = [];
+      let currentFolder = null; // null = root, object = inside folder
+      let breadcrumbPath = []; // Đường dẫn breadcrumb
+      let authToken = null;
+      let currentUser = null;
+
+      // Authentication functions
+      function initAuth() {
+        // Kiểm tra token trong localStorage
+        authToken = localStorage.getItem("auth_token");
+        const userInfo = localStorage.getItem("user_info");
+
+        if (authToken && userInfo) {
+          try {
+            currentUser = JSON.parse(userInfo);
+            updateUserDisplay();
+
+            // Verify token với server
+            verifyToken();
+          } catch (e) {
+            console.error("Error parsing user info:", e);
+            redirectToLogin();
+          }
+        } else {
+          redirectToLogin();
+        }
+      }
+
+      async function verifyToken() {
+        try {
+          const response = await fetch("/api/user", {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+
+          if (!response.ok) {
+            redirectToLogin();
+            return;
+          }
+
+          const data = await response.json();
+          currentUser = data.user;
+          updateUserDisplay();
+        } catch (error) {
+          console.error("Token verification failed:", error);
+          redirectToLogin();
+        }
+      }
+
+      function updateUserDisplay() {
+        if (currentUser) {
+          document.getElementById("username").textContent =
+            currentUser.username;
+          document.getElementById("userRole").textContent = currentUser.role;
+
+          // Hiển thị nút Admin Panel nếu user là admin
+          const adminBtn = document.getElementById("adminBtn");
+          if (currentUser.role === "admin") {
+            adminBtn.classList.remove("hidden");
+          } else {
+            adminBtn.classList.add("hidden");
+          }
+        }
+      }
+
+      function redirectToLogin() {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user_info");
+        window.location.href = "/login";
+      }
+
+      async function logout() {
+        try {
+          await fetch("/api/logout", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+        } catch (error) {
+          console.error("Logout error:", error);
+        }
+
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user_info");
+        window.location.href = "/login";
+      }
+
+      // Enhanced fetch function với authentication
+      async function authenticatedFetch(url, options = {}) {
+        // Chỉ dùng credentials để gửi session cookies, không cần Bearer token
+        const defaultOptions = {
+          credentials: "include", // Quan trọng: gửi cookies
+          headers: {
+            "Content-Type": "application/json",
+            ...options.headers,
+          },
+        };
+
+        const response = await fetch(url, { ...options, ...defaultOptions });
+
+        if (response.status === 401) {
+          redirectToLogin();
+          return null;
+        }
+
+        return response;
+      }
+
+      // Khởi tạo trang
+      document.addEventListener("DOMContentLoaded", function () {
+        initAuth();
+        loadStats();
+        loadFiles();
+        loadFolders();
+
+        // Tìm kiếm real-time
+        document
+          .getElementById("search-input")
+          .addEventListener("input", function (e) {
+            filterContent(e.target.value);
+          });
+      });
+
+      // Chuyển về trang upload chính
+      function goToUploadPage() {
+        window.location.replace("http://127.0.0.1:8000");
+      }
+
+      // Load thống kê
+      async function loadStats() {
+        try {
+          const response = await authenticatedFetch("/api/stats");
+          if (!response) return;
+
+          const stats = await response.json();
+
+          document.getElementById("total-files").textContent =
+            stats.total_files;
+          document.getElementById("total-folders").textContent =
+            stats.total_folders;
+          document.getElementById("total-size").textContent = formatFileSize(
+            stats.total_size
+          );
+          document.getElementById("file-types").textContent = Object.keys(
+            stats.file_types
+          ).length;
+        } catch (error) {
+          console.error("Error loading stats:", error);
+        }
+      }
+
+      // Load files
+      async function loadFiles() {
+        try {
+          const response = await authenticatedFetch("/api/files");
+          if (!response) return;
+
+          allFiles = await response.json();
+          console.log("🔍 DEBUG: Loaded files:", allFiles);
+          console.log("🔍 DEBUG: Number of files:", allFiles.length);
+          renderContent();
+        } catch (error) {
+          console.error("Error loading files:", error);
+        }
+      }
+
+      // Load folders
+      async function loadFolders() {
+        try {
+          const response = await authenticatedFetch("/api/folders");
+          if (!response) return;
+
+          allFolders = await response.json();
+          renderContent();
+        } catch (error) {
+          console.error("Error loading folders:", error);
+        }
+      }
+
+      // Render nội dung
+      function renderContent() {
+        console.log("🔍 DEBUG: renderContent called");
+        console.log("🔍 DEBUG: currentTab:", currentTab);
+        console.log("🔍 DEBUG: allFiles:", allFiles);
+        console.log("🔍 DEBUG: allFolders:", allFolders);
+
+        const content = document.getElementById("content");
+        const searchTerm = document
+          .getElementById("search-input")
+          .value.toLowerCase();
+
+        let items = [];
+
+        if (currentFolder) {
+          // Đang ở trong folder - hiển thị files và subfolders trong folder này
+          if (currentTab === "all") {
+            // Files trong folder hiện tại - check theo folder_id hoặc path
+            const folderFiles = allFiles.filter((file) => {
+              // Ưu tiên check theo folder_id nếu có
+              if (file.folder_id) {
+                return file.folder_id === currentFolder.id;
+              }
+
+              // Fallback: check theo path (legacy logic)
+              if (!file.file_path) return false;
+              const pathParts = file.file_path.split("/");
+              return (
+                pathParts.length >= 3 && pathParts[1] === currentFolder.name
+              );
+            });
+
+            // Subfolders trong folder hiện tại
+            const subfolders = allFolders.filter(
+              (folder) => folder.parent_id === currentFolder.id
+            );
+
+            items = [...folderFiles, ...subfolders];
+          } else if (currentTab === "files") {
+            // Chỉ files trong folder hiện tại
+            items = allFiles.filter((file) => {
+              // Ưu tiên check theo folder_id
+              if (file.folder_id) {
+                return file.folder_id === currentFolder.id;
+              }
+
+              // Fallback: check theo path
+              if (!file.file_path) return false;
+              // Normalize path separators (handle both / and \)
+              const normalizedPath = file.file_path.replace(/\\/g, "/");
+              const pathParts = normalizedPath.split("/");
+              return (
+                pathParts.length >= 3 && pathParts[1] === currentFolder.name
+              );
+            });
+          } else if (currentTab === "folders") {
+            // Hiển thị subfolders trong folder hiện tại
+            items = allFolders.filter(
+              (folder) => folder.parent_id === currentFolder.id
+            );
+          }
+        } else {
+          // Đang ở root - chỉ hiển thị files không trong folder nào
+          if (currentTab === "all") {
+            // Files ở root level (không có folder_id)
+            const rootFiles = allFiles.filter((file) => {
+              // File có folder_id thì không phải root
+              if (file.folder_id) return false;
+
+              // Files không có path hoặc path không chứa subfolder
+              if (!file.file_path) return true;
+
+              // Path dạng: filename.mp4 (root) hoặc username/filename.mp4 (root) hoặc username/folder/filename.mp4 (trong folder)
+              // Normalize path separators (handle both / and \)
+              const normalizedPath = file.file_path.replace(/\\/g, "/");
+              const pathParts = normalizedPath.split("/");
+
+              // Hiển thị files có path 1-2 parts (root level), ẩn files có 3+ parts (trong folder)
+              return pathParts.length <= 2;
+            });
+
+            // Chỉ hiển thị root-level folders (parent_id = null)
+            const rootFolders = allFolders.filter(
+              (folder) => !folder.parent_id || folder.parent_id === null
+            );
+            items = [...rootFiles, ...rootFolders];
+          } else if (currentTab === "files") {
+            // Chỉ hiển thị files ở root level
+            items = allFiles.filter((file) => {
+              // File có folder_id thì không phải root
+              if (file.folder_id) return false;
+
+              if (!file.file_path) return true;
+              // Normalize path separators (handle both / and \)
+              const normalizedPath = file.file_path.replace(/\\/g, "/");
+              const pathParts = normalizedPath.split("/");
+              return pathParts.length <= 2; // 1 part (filename.jpg) hoặc 2 parts (admin/filename.jpg)
+            });
+          } else if (currentTab === "folders") {
+            // Chỉ hiển thị root-level folders
+            items = allFolders.filter(
+              (folder) => !folder.parent_id || folder.parent_id === null
+            );
+          }
+        }
+
+        // Lọc theo search term
+        if (searchTerm) {
+          items = items.filter((item) =>
+            item.name.toLowerCase().includes(searchTerm)
+          );
+        }
+
+        console.log("🔍 DEBUG: Final items to render:", items);
+        console.log("🔍 DEBUG: Number of items:", items.length);
+
+        // Cập nhật breadcrumb
+        updateBreadcrumb();
+
+        if (items.length === 0) {
+          const emptyMessage = currentFolder
+            ? `Folder "${currentFolder.name}" chưa có files nào`
+            : currentTab === "all"
+            ? "Hãy upload files hoặc tạo folders để bắt đầu"
+            : currentTab === "files"
+            ? "Chưa có files nào được upload"
+            : "Chưa có folders nào được tạo";
+
+          content.innerHTML = `
+                    <div class="empty-state">
+                        <h3>📂 Không có ${
+                          currentTab === "all" ? "items" : currentTab
+                        } nào</h3>
+                        <p>${emptyMessage}</p>
+                    </div>
+                `;
+          return;
+        }
+
+        const containerClass = viewMode === "grid" ? "file-grid" : "file-list";
+        content.innerHTML = `
+                <div class="${containerClass}">
+                    ${items.map((item) => renderItem(item)).join("")}
+                </div>
+            `;
+      }
+
+      // Render từng item
+      function renderItem(item) {
+        if (viewMode === "list") {
+          // List view layout
+          if (item.type === "folder") {
+            return `
+                        <div class="file-card folder-card" onclick="navigateToFolder('${
+                          item.id
+                        }')" style="cursor: pointer;">
+                            <div class="file-icon">📁</div>
+                            <div class="file-details">
+                                <div class="file-info">
+                                    <div class="file-name">${item.name}</div>
+                                    <div class="file-meta">Tạo: ${formatDate(
+                                      item.created_time
+                                    )}</div>
+                                </div>
+                                <div class="file-actions">
+                                    <button class="btn btn-danger btn-small" onclick="event.stopPropagation(); deleteFolder('${
+                                      item.id
+                                    }')">
+                                        🗑️ Xóa
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+          } else {
+            return `
+                        <div class="file-card" oncontextmenu="showContextMenu(event, '${
+                          item.id
+                        }', '${item.name}')">
+                            <div class="file-icon">📄</div>
+                            <div class="file-details">
+                                <div class="file-info">
+                                    <div class="file-name-editable">
+                                        <input type="text" class="file-name-input" value="${
+                                          item.name
+                                        }" 
+                                               onkeydown="handleRenameKeydown(event, '${
+                                                 item.id
+                                               }')"
+                                               onblur="cancelRename('${
+                                                 item.id
+                                               }')">
+                                        <div class="file-name">${
+                                          item.name
+                                        }</div>
+                                        <div class="rename-actions">
+                                            <button class="rename-btn save" onclick="saveRename('${
+                                              item.id
+                                            }')">✅</button>
+                                            <button class="rename-btn cancel" onclick="cancelRename('${
+                                              item.id
+                                            }')">❌</button>
+                                        </div>
+                                    </div>
+                                    <div class="file-meta">${formatFileSize(
+                                      item.size
+                                    )} • ${formatDate(item.upload_time)}</div>
+                                </div>
+                                <div class="file-actions">
+                                    <div class="primary-actions">
+                                        <button class="btn btn-small btn-preview" onclick="previewFile('${
+                                          item.id
+                                        }', '${item.name}')">
+                                            👁️ Preview
+                                        </button>
+                                        <a href="/api/files/${
+                                          item.id
+                                        }/download" class="btn btn-small">
+                                            ⬇️ Download
+                                        </a>
+                                    </div>
+                                    <div class="more-actions">
+                                        <button class="more-btn" onclick="toggleDropdown(event, '${
+                                          item.id
+                                        }')">⋮</button>
+                                        <div class="dropdown-menu" id="dropdown-${
+                                          item.id
+                                        }">
+                                            <button class="dropdown-item" onclick="openMoveFileModal('${
+                                              item.id
+                                            }', '${item.name}')">
+                                                📂 Move
+                                            </button>
+                                            <button class="dropdown-item" onclick="startRename('${
+                                              item.id
+                                            }')">
+                                                ✏️ Rename
+                                            </button>
+                                            <button class="dropdown-item danger" onclick="deleteFile('${
+                                              item.id
+                                            }')" title="Chuyển vào thùng rác">
+                                                🗑️ Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+          }
+        } else {
+          // Grid view layout (original)
+          if (item.type === "folder") {
+            return `
+                        <div class="file-card folder-card" onclick="navigateToFolder('${
+                          item.id
+                        }')" style="cursor: pointer;">
+                            <div class="file-icon">📁</div>
+                            <div class="file-name">${item.name}</div>
+                            <div class="file-info">
+                                Tạo: ${formatDate(item.created_time)}
+                            </div>
+                            <div class="file-actions">
+                                <button class="btn btn-danger btn-small" onclick="event.stopPropagation(); deleteFolder('${
+                                  item.id
+                                }')">
+                                    🗑️ Xóa
+                                </button>
+                            </div>
+                        </div>
+                    `;
+          } else {
+            return `
+                        <div class="file-card" oncontextmenu="showContextMenu(event, '${
+                          item.id
+                        }', '${item.name}')">
+                            <div class="file-icon">📄</div>
+                            <div class="file-name-editable">
+                                <input type="text" class="file-name-input" value="${
+                                  item.name
+                                }" 
+                                       onkeydown="handleRenameKeydown(event, '${
+                                         item.id
+                                       }')"
+                                       onblur="cancelRename('${item.id}')">
+                                <div class="file-name">${item.name}</div>
+                                <div class="rename-actions">
+                                    <button class="rename-btn save" onclick="saveRename('${
+                                      item.id
+                                    }')">✅</button>
+                                    <button class="rename-btn cancel" onclick="cancelRename('${
+                                      item.id
+                                    }')">❌</button>
+                                </div>
+                            </div>
+                            <div class="file-info">
+                                Kích thước: ${formatFileSize(item.size)}<br>
+                                Upload: ${formatDate(item.upload_time)}
+                            </div>
+                            <div class="file-actions">
+                                <div class="primary-actions">
+                                    <button class="btn btn-small btn-preview" onclick="previewFile('${
+                                      item.id
+                                    }', '${item.name}')">
+                                        👁️ Preview
+                                    </button>
+                                    <a href="/api/files/${
+                                      item.id
+                                    }/download" class="btn btn-small">
+                                        ⬇️ Download
+                                    </a>
+                                </div>
+                                <div class="more-actions">
+                                    <button class="more-btn" onclick="toggleDropdown(event, '${
+                                      item.id
+                                    }')">⋮</button>
+                                    <div class="dropdown-menu" id="dropdown-${
+                                      item.id
+                                    }">
+                                        <button class="dropdown-item" onclick="openMoveFileModal('${
+                                          item.id
+                                        }', '${item.name}')">
+                                            📂 Move
+                                        </button>
+                                        <button class="dropdown-item" onclick="startRename('${
+                                          item.id
+                                        }')">
+                                            ✏️ Rename
+                                        </button>
+                                        <button class="dropdown-item danger" onclick="deleteFile('${
+                                          item.id
+                                        }')" title="Chuyển vào thùng rác">
+                                            🗑️ Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+          }
+        }
+      }
+
+      // Chuyển tab
+      function switchTab(tab) {
+        currentTab = tab;
+
+        // Cập nhật active tab
+        document
+          .querySelectorAll(".tab")
+          .forEach((t) => t.classList.remove("active"));
+        event.target.classList.add("active");
+
+        renderContent();
+      }
+
+      // Chuyển view mode
+      function switchView(mode) {
+        viewMode = mode;
+
+        // Cập nhật active view button
+        document
+          .querySelectorAll(".view-btn")
+          .forEach((btn) => btn.classList.remove("active"));
+        document.getElementById(mode + "-view").classList.add("active");
+
+        renderContent();
+      }
+
+      // Lọc nội dung
+      function filterContent(searchTerm) {
+        renderContent();
+      }
+
+      // Mở modal tạo folder
+      function openCreateFolderModal() {
+        // Populate parent folder dropdown
+        populateParentFolderOptions();
+        document.getElementById("createFolderModal").style.display = "block";
+        document.getElementById("folderName").focus();
+      }
+
+      // Populate parent folder dropdown với beautiful styling
+      function populateParentFolderOptions() {
+        const select = document.getElementById("parentFolder");
+        // Clear existing options except root
+        select.innerHTML = '<option value="">🏠 Root (Thư mục gốc)</option>';
+
+        // Chỉ lấy những folders mà user có thể thấy trong UI hiện tại
+        const visibleFolders = getVisibleFoldersForCurrentContext();
+        visibleFolders.forEach((folder) => {
+          const option = document.createElement("option");
+          option.value = folder.id;
+
+          // Add beautiful icons và indentation based on depth
+          const depth = getFolderDepth(folder);
+          const indent = "  ".repeat(depth); // 2 spaces per level
+          const icon = depth === 0 ? "📁" : "📂";
+
+          option.textContent = `${indent}${icon} ${folder.displayPath}`;
+
+          // Add custom styling classes
+          if (depth === 0) {
+            option.className = "folder-option-root";
+          } else {
+            option.className = "folder-option-child";
+          }
+
+          select.appendChild(option);
+        });
+
+        // Set current folder as default if we're inside a folder
+        if (currentFolder) {
+          select.value = currentFolder.id;
+        }
+      }
+
+      // Get all folders that can be used as parent (with path hierarchy)
+      function getAllFoldersForNesting() {
+        return getAllFoldersForMoveFile(); // Reuse same hierarchical logic
+      }
+
+      // Lấy những folders mà user thực sự có thể thấy trong context hiện tại
+      function getVisibleFoldersForCurrentContext() {
+        // Đơn giản hóa: chỉ hiển thị root-level folders trong dropdown
+        // vì đó là những gì user thấy ở trang chính
+        const rootFolders = allFolders.filter(
+          (folder) => !folder.parent_id || folder.parent_id === null
+        );
+
+        // Build display paths
+        return rootFolders
+          .map((folder) => ({
+            ...folder,
+            displayPath: folder.name,
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      // Đóng modal tạo folder
+      function closeCreateFolderModal() {
+        document.getElementById("createFolderModal").style.display = "none";
+        document.getElementById("folderName").value = "";
+        document.getElementById("parentFolder").value = "";
+      }
+
+      // Tạo folder
+      async function createFolder() {
+        const folderName = document.getElementById("folderName").value.trim();
+        const parentId = document.getElementById("parentFolder").value;
+
+        if (!folderName) {
+          alert("Vui lòng nhập tên folder!");
+          return;
+        }
+
+        try {
+          const requestData = { name: folderName };
+          if (parentId) {
+            requestData.parent_id = parentId;
+          }
+
+          const response = await authenticatedFetch("/api/folders", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestData),
+          });
+
+          if (!response) return; // Redirected to login
+
+          const result = await response.json();
+
+          if (result.success) {
+            closeCreateFolderModal();
+            loadFolders();
+            loadStats();
+            renderContent(); // Refresh content to show new folder
+            alert("Tạo folder thành công!");
+          } else {
+            alert("Lỗi: " + result.error);
+          }
+        } catch (error) {
+          console.error("Error creating folder:", error);
+          alert("Có lỗi xảy ra khi tạo folder!");
+        }
+      }
+
+      // Global helper functions
+      // Helper to get folder hierarchy depth
+      function getFolderDepth(folder) {
+        let depth = 0;
+        let current = folder;
+        while (current.parent_id) {
+          depth++;
+          current = allFolders.find((f) => f.id === current.parent_id) || {
+            parent_id: null,
+          };
+        }
+        return depth;
+      }
+
+      // Folder navigation functions
+      function navigateToFolder(folderId) {
+        if (folderId === null || folderId === "null") {
+          // Quay về root
+          currentFolder = null;
+          breadcrumbPath = [];
+        } else {
+          // Vào folder
+          const folder = allFolders.find((f) => f.id === folderId);
+          if (folder) {
+            currentFolder = folder;
+            // Build full breadcrumb path từ root đến current folder
+            breadcrumbPath = buildBreadcrumbPath(folder);
+          }
+        }
+        renderContent();
+      }
+
+      // Build full breadcrumb path từ root
+      function buildBreadcrumbPath(folder) {
+        const path = [];
+        let current = folder;
+
+        // Build path từ current folder về root
+        while (current) {
+          path.unshift(current); // Add to beginning
+          if (current.parent_id) {
+            current = allFolders.find((f) => f.id === current.parent_id);
+          } else {
+            current = null;
+          }
+        }
+
+        return path;
+      }
+
+      function updateBreadcrumb() {
+        const breadcrumb = document.getElementById("breadcrumb");
+        let html =
+          '<span class="breadcrumb-item" onclick="navigateToFolder(null)">🏠 Trang chủ</span>';
+
+        // Build breadcrumb với full hierarchy
+        breadcrumbPath.forEach((folder, index) => {
+          html += '<span class="breadcrumb-separator">></span>';
+
+          if (index === breadcrumbPath.length - 1) {
+            // Last item (current folder) - active và không clickable
+            html += `<span class="breadcrumb-item active">📁 ${folder.name}</span>`;
+          } else {
+            // Parent folders - clickable để navigate back
+            html += `<span class="breadcrumb-item" onclick="navigateToFolder('${folder.id}')">📁 ${folder.name}</span>`;
+          }
+        });
+
+        breadcrumb.innerHTML = html;
+      }
+
+      // Move file to folder functions
+      let selectedFileId = null;
+      let selectedFileName = null;
+
+      // Mở modal move file
+      function openMoveFileModal(fileId, fileName) {
+        selectedFileId = fileId;
+        selectedFileName = fileName;
+        document.getElementById("moveFileName").textContent = fileName;
+
+        // Load danh sách folders với hierarchical structure
+        populateTargetFolderOptions();
+
+        document.getElementById("moveFileModal").style.display = "block";
+      }
+
+      // Populate target folder options với hierarchy và beautiful styling
+      function populateTargetFolderOptions() {
+        const folderSelect = document.getElementById("targetFolder");
+        folderSelect.innerHTML =
+          '<option value="">🏠 Root (Thư mục gốc)</option>';
+
+        // Get folders với hierarchical path
+        const foldersWithPath = getAllFoldersForMoveFile();
+
+        foldersWithPath.forEach((folder) => {
+          const option = document.createElement("option");
+          option.value = folder.id;
+
+          // Add beautiful icons và indentation based on depth
+          const depth = getFolderDepth(folder);
+          const indent = "  ".repeat(depth); // 2 spaces per level
+          const icon = depth === 0 ? "📁" : "📂";
+
+          option.textContent = `${indent}${icon} ${folder.displayPath}`;
+
+          // Add custom styling classes
+          if (depth === 0) {
+            option.className = "folder-option-root";
+          } else {
+            option.className = "folder-option-child";
+          }
+
+          folderSelect.appendChild(option);
+        });
+      }
+
+      // Get all folders với proper hierarchy for move file
+      function getAllFoldersForMoveFile() {
+        const result = [];
+
+        // Helper function to build hierarchical display path
+        function buildDisplayPath(folder, prefix = "") {
+          const path = prefix ? `${prefix}/${folder.name}` : folder.name;
+          return path;
+        }
+
+        // Helper to get folder hierarchy depth (moved to global scope)
+        // Removed - now using global getFolderDepth function
+
+        // Sort folders by hierarchy and name
+        const sortedFolders = [...allFolders].sort((a, b) => {
+          const depthA = getFolderDepth(a);
+          const depthB = getFolderDepth(b);
+
+          if (depthA !== depthB) {
+            return depthA - depthB; // Sort by depth first
+          }
+
+          // Same depth, sort by name
+          return a.name.localeCompare(b.name);
+        });
+
+        // Build result với proper display paths
+        sortedFolders.forEach((folder) => {
+          let displayPath = folder.name;
+          let current = folder;
+          const pathParts = [folder.name];
+
+          // Build full path from root
+          while (current.parent_id) {
+            const parent = allFolders.find((f) => f.id === current.parent_id);
+            if (parent) {
+              pathParts.unshift(parent.name);
+              current = parent;
+            } else {
+              break;
+            }
+          }
+
+          displayPath = pathParts.join("/");
+
+          result.push({
+            ...folder,
+            displayPath: displayPath,
+          });
+        });
+
+        return result;
+      }
+
+      // Đóng modal move file
+      function closeMoveFileModal() {
+        document.getElementById("moveFileModal").style.display = "none";
+        selectedFileId = null;
+        selectedFileName = null;
+      }
+
+      // Confirm move file
+      async function confirmMoveFile() {
+        const targetFolderId = document.getElementById("targetFolder").value;
+        // Removed validation - allow empty string for root folder
+
+        try {
+          const response = await fetch(`/api/files/${selectedFileId}/move`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ folder_id: targetFolderId || null }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            closeMoveFileModal();
+            loadFiles();
+            loadStats();
+            alert("Di chuyển file thành công!");
+          } else {
+            alert("Lỗi: " + result.error);
+          }
+        } catch (error) {
+          console.error("Error moving file:", error);
+          alert("Có lỗi xảy ra khi di chuyển file!");
+        }
+      }
+
+      // Context menu functions
+      function showContextMenu(event, fileId, fileName) {
+        event.preventDefault();
+        selectedFileId = fileId;
+        selectedFileName = fileName;
+
+        const contextMenu = document.getElementById("contextMenu");
+        contextMenu.style.display = "block";
+        contextMenu.style.left = event.pageX + "px";
+        contextMenu.style.top = event.pageY + "px";
+      }
+
+      function hideContextMenu() {
+        document.getElementById("contextMenu").style.display = "none";
+      }
+
+      function moveFileToFolder() {
+        hideContextMenu();
+        openMoveFileModal(selectedFileId, selectedFileName);
+      }
+
+      function downloadSelectedFile() {
+        hideContextMenu();
+        window.open(`/api/files/${selectedFileId}/download`, "_blank");
+      }
+
+      function deleteSelectedFile() {
+        hideContextMenu();
+        deleteFile(selectedFileId);
+      }
+
+      // Xóa file
+      async function deleteFile(fileId) {
+        if (
+          !confirm(
+            "Bạn có chắc chắn muốn chuyển file này vào thùng rác?\n\nFile sẽ được giữ trong thùng rác 7 ngày trước khi bị xóa vĩnh viễn."
+          )
+        ) {
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/files/${fileId}`, {
+            method: "DELETE",
+            credentials: "include",
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            loadFiles();
+            loadStats();
+            alert(
+              "File đã được chuyển vào thùng rác thành công!\n\nBạn có thể khôi phục file trong vòng 7 ngày từ thùng rác."
+            );
+          } else {
+            alert("Lỗi: " + result.error);
+          }
+        } catch (error) {
+          console.error("Error moving file to recycle bin:", error);
+          alert("Có lỗi xảy ra khi chuyển file vào thùng rác!");
+        }
+      }
+
+      // Dropdown menu functions
+      function toggleDropdown(event, fileId) {
+        event.stopPropagation();
+
+        // Close all other dropdowns first
+        document.querySelectorAll(".dropdown-menu").forEach((menu) => {
+          if (menu.id !== `dropdown-${fileId}`) {
+            menu.classList.remove("show");
+          }
+        });
+
+        // Toggle current dropdown
+        const dropdown = document.getElementById(`dropdown-${fileId}`);
+        dropdown.classList.toggle("show");
+      }
+
+      // Close dropdowns when clicking outside
+      document.addEventListener("click", function (event) {
+        if (!event.target.closest(".more-actions")) {
+          document.querySelectorAll(".dropdown-menu").forEach((menu) => {
+            menu.classList.remove("show");
+          });
+        }
+      });
+
+      // Rename functions
+      function startRename(fileId) {
+        // Close dropdown
+        document.getElementById(`dropdown-${fileId}`).classList.remove("show");
+
+        // Find the file card
+        const fileCard = document
+          .querySelector(`#dropdown-${fileId}`)
+          .closest(".file-card");
+        const nameContainer = fileCard.querySelector(".file-name-editable");
+        const input = nameContainer.querySelector(".file-name-input");
+        const nameDiv = nameContainer.querySelector(".file-name");
+        const actions = nameContainer.querySelector(".rename-actions");
+
+        // Show input and actions, hide name
+        input.classList.add("active");
+        actions.classList.add("active");
+
+        // Focus and select text
+        input.focus();
+        input.select();
+
+        // Store original value
+        input.dataset.originalValue = input.value;
+      }
+
+      function cancelRename(fileId) {
+        const fileCard = document
+          .querySelector(`#dropdown-${fileId}`)
+          .closest(".file-card");
+        const nameContainer = fileCard.querySelector(".file-name-editable");
+        const input = nameContainer.querySelector(".file-name-input");
+        const actions = nameContainer.querySelector(".rename-actions");
+
+        // Restore original value
+        if (input.dataset.originalValue) {
+          input.value = input.dataset.originalValue;
+        }
+
+        // Hide input and actions
+        input.classList.remove("active");
+        actions.classList.remove("active");
+      }
+
+      function handleRenameKeydown(event, fileId) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveRename(fileId);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancelRename(fileId);
+        }
+      }
+
+      async function saveRename(fileId) {
+        const fileCard = document
+          .querySelector(`#dropdown-${fileId}`)
+          .closest(".file-card");
+        const nameContainer = fileCard.querySelector(".file-name-editable");
+        const input = nameContainer.querySelector(".file-name-input");
+        const nameDiv = nameContainer.querySelector(".file-name");
+        const actions = nameContainer.querySelector(".rename-actions");
+
+        const newName = input.value.trim();
+        const originalName = input.dataset.originalValue;
+
+        // Validate name
+        if (!newName) {
+          alert("Tên file không được để trống!");
+          input.focus();
+          return;
+        }
+
+        if (newName === originalName) {
+          cancelRename(fileId);
+          return;
+        }
+
+        // Validate file name
+        const invalidChars = /[<>:"/\\|?*]/;
+        if (invalidChars.test(newName)) {
+          alert('Tên file không được chứa các ký tự: < > : " / \\ | ? *');
+          input.focus();
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/files/${fileId}/rename`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "include",
+            body: JSON.stringify({ new_name: newName }),
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            console.log(
+              "🔍 Rename success, reloading from server for consistency"
+            );
+            console.log("🔍 File ID:", fileId, "New name:", newName);
+
+            // Update display immediately
+            nameDiv.textContent = newName;
+            input.value = newName;
+            input.dataset.originalValue = newName;
+
+            // Hide input and actions
+            input.classList.remove("active");
+            actions.classList.remove("active");
+
+            console.log(
+              "🔍 Reloading files from server to ensure consistency..."
+            );
+            // Reload từ server để đảm bảo data consistency hoàn toàn
+            await loadFiles();
+            console.log("🔍 Files reloaded successfully");
+
+            alert("Đổi tên file thành công!");
+          } else {
+            alert("Lỗi: " + result.error);
+            input.focus();
+          }
+        } catch (error) {
+          console.error("Error renaming file:", error);
+          alert("Có lỗi xảy ra khi đổi tên file!");
+          input.focus();
+        }
+      }
+
+      // Xóa folder
+      async function deleteFolder(folderId) {
+        if (
+          !confirm(
+            "Bạn có chắc chắn muốn xóa folder này? Tất cả files bên trong sẽ bị xóa!"
+          )
+        ) {
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/folders/${folderId}`, {
+            method: "DELETE",
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            loadFolders();
+            loadStats();
+            alert("Xóa folder thành công!");
+          } else {
+            alert("Lỗi: " + result.error);
+          }
+        } catch (error) {
+          console.error("Error deleting folder:", error);
+          alert("Có lỗi xảy ra khi xóa folder!");
+        }
+      }
+
+      // Format file size
+      function formatFileSize(bytes) {
+        if (bytes === 0) return "0 B";
+        const k = 1024;
+        const sizes = ["B", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+      }
+
+      // Preview file functionality
+      async function previewFile(fileId, fileName) {
+        try {
+          // Get file info first
+          const infoResponse = await fetch(`/api/files/${fileId}/info`);
+          if (!infoResponse.ok) {
+            throw new Error(`Failed to get file info: ${infoResponse.status}`);
+          }
+
+          const fileInfo = await infoResponse.json();
+          showPreviewModal(fileInfo);
+        } catch (error) {
+          console.error("Error previewing file:", error);
+          alert(`Error previewing file: ${error.message}`);
+        }
+      }
+
+      // Show preview modal
+      function showPreviewModal(fileInfo) {
+        const modal = document.getElementById("previewModal");
+        const title = document.getElementById("previewTitle");
+        const body = document.getElementById("previewBody");
+
+        title.textContent = fileInfo.name;
+
+        // Show loading first
+        body.innerHTML = `
+          <div class="preview-loading">
+            <div class="preview-spinner"></div>
+            <p>Loading preview...</p>
+          </div>
+        `;
+
+        modal.classList.add("active");
+
+        // Setup close button
+        const closeBtn = document.getElementById("previewClose");
+        closeBtn.onclick = () => {
+          modal.classList.remove("active");
+        };
+
+        // Close on outside click
+        modal.onclick = (e) => {
+          if (e.target === modal) {
+            modal.classList.remove("active");
+          }
+        };
+
+        // Load preview content
+        setTimeout(() => {
+          loadPreviewContent(fileInfo, body);
+        }, 500);
+      }
+
+      // Load preview content based on file type
+      function loadPreviewContent(fileInfo, container) {
+        const { preview_type, preview_url, name, size, id } = fileInfo;
+
+        switch (preview_type) {
+          case "image":
+            container.innerHTML = `
+              <img src="${preview_url}" alt="${name}" class="preview-image" 
+                   onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              <div style="display:none;" class="preview-download">
+                <div class="preview-icon">🖼️</div>
+                <div class="preview-download-info">
+                  <h3>Image Preview Failed</h3>
+                  <p>Cannot display this image</p>
+                  <p><strong>Size:</strong> ${formatFileSize(size)}</p>
+                </div>
+                <a href="/api/files/${id}/download" class="preview-download-btn">
+                  ⬇️ Download
+                </a>
+              </div>
+            `;
+            break;
+
+          case "pdf":
+            container.innerHTML = `
+              <iframe src="${preview_url}" class="preview-pdf" 
+                      onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+              </iframe>
+              <div style="display:none;" class="preview-download">
+                <div class="preview-icon">📄</div>
+                <div class="preview-download-info">
+                  <h3>PDF Preview Not Available</h3>
+                  <p>Your browser doesn't support PDF preview</p>
+                  <p><strong>Size:</strong> ${formatFileSize(size)}</p>
+                </div>
+                <a href="/api/files/${id}/download" class="preview-download-btn">
+                  ⬇️ Download PDF
+                </a>
+              </div>
+            `;
+            break;
+
+          case "video":
+            container.innerHTML = `
+              <video src="${preview_url}" class="preview-video" controls 
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                Your browser does not support video playback.
+              </video>
+              <div style="display:none;" class="preview-download">
+                <div class="preview-icon">🎬</div>
+                <div class="preview-download-info">
+                  <h3>Video Preview Failed</h3>
+                  <p>Cannot play this video format</p>
+                  <p><strong>Size:</strong> ${formatFileSize(size)}</p>
+                </div>
+                <a href="/api/files/${id}/download" class="preview-download-btn">
+                  ⬇️ Download Video
+                </a>
+              </div>
+            `;
+            break;
+
+          case "audio":
+            container.innerHTML = `
+              <audio src="${preview_url}" class="preview-audio" controls 
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                Your browser does not support audio playback.
+              </audio>
+              <div style="display:none;" class="preview-download">
+                <div class="preview-icon">🎵</div>
+                <div class="preview-download-info">
+                  <h3>Audio Preview Failed</h3>
+                  <p>Cannot play this audio format</p>
+                  <p><strong>Size:</strong> ${formatFileSize(size)}</p>
+                </div>
+                <a href="/api/files/${id}/download" class="preview-download-btn">
+                  ⬇️ Download Audio
+                </a>
+              </div>
+            `;
+            break;
+
+          case "text":
+            // Load text content
+            fetch(preview_url)
+              .then((response) => response.text())
+              .then((text) => {
+                container.innerHTML = `<pre class="preview-text">${escapeHtml(
+                  text.substring(0, 10000)
+                )}</pre>`;
+              })
+              .catch(() => {
+                container.innerHTML = getDownloadOnlyPreview(
+                  fileInfo,
+                  "📝",
+                  "Text Preview Failed",
+                  "Cannot load text file"
+                );
+              });
+            return;
+
+          default:
+            container.innerHTML = getDownloadOnlyPreview(
+              fileInfo,
+              "📎",
+              "Preview Not Available",
+              `${fileInfo.extension} files cannot be previewed`
+            );
+            break;
+        }
+      }
+
+      // Helper function for download-only preview
+      function getDownloadOnlyPreview(fileInfo, icon, title, subtitle) {
+        return `
+          <div class="preview-download">
+            <div class="preview-icon">${icon}</div>
+            <div class="preview-download-info">
+              <h3>${title}</h3>
+              <p>${subtitle}</p>
+              <p><strong>Size:</strong> ${formatFileSize(fileInfo.size)}</p>
+            </div>
+            <a href="/api/files/${
+              fileInfo.id
+            }/download" class="preview-download-btn">
+              ⬇️ Download
+            </a>
+          </div>
+        `;
+      }
+
+      // Helper function to escape HTML
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Recycle Bin Functions
+      let userRecycleFiles = [];
+
+      function toggleRecycleBin() {
+        const modal = document.getElementById("recycleBinModal");
+        modal.classList.add("active");
+        loadUserRecycleFiles();
+
+        // Setup close button
+        const closeBtn = document.getElementById("recycleBinClose");
+        closeBtn.onclick = () => {
+          modal.classList.remove("active");
+        };
+
+        // Close on outside click
+        modal.onclick = (e) => {
+          if (e.target === modal) {
+            modal.classList.remove("active");
+          }
+        };
+      }
+
+      async function loadUserRecycleFiles() {
+        try {
+          console.log("🗑️ Loading recycle bin files...");
+          const response = await fetch("/api/recycle-bin", {
+            credentials: "include",
+          });
+
+          console.log("🗑️ Response status:", response.status);
+          console.log("🗑️ Response headers:", response.headers);
+
+          if (!response.ok) {
+            console.error(
+              "🗑️ Response not OK:",
+              response.status,
+              response.statusText
+            );
+            return;
+          }
+
+          const data = await response.json();
+          console.log("🗑️ Response data:", data);
+
+          userRecycleFiles = data.files || [];
+          console.log("🗑️ User recycle files:", userRecycleFiles);
+          console.log("🗑️ Number of files:", userRecycleFiles.length);
+
+          renderUserRecycleFiles(userRecycleFiles);
+        } catch (error) {
+          console.error("🗑️ Error loading recycle bin:", error);
+        }
+      }
+
+      function renderUserRecycleFiles(files) {
+        const tbody = document.getElementById("recycleBinTableBody");
+        const emptyDiv = document.getElementById("recycleBinEmpty");
+
+        if (files.length === 0) {
+          tbody.innerHTML = "";
+          emptyDiv.style.display = "block";
+          return;
+        }
+
+        emptyDiv.style.display = "none";
+        tbody.innerHTML = files
+          .map((file) => {
+            const daysLeft = Math.ceil(
+              (new Date(file.restore_deadline) - new Date()) /
+                (1000 * 60 * 60 * 24)
+            );
+            const deadlineColor =
+              daysLeft <= 1
+                ? "color: red; font-weight: bold;"
+                : daysLeft <= 3
+                ? "color: orange;"
+                : "";
+
+            return `
+            <tr style="border-bottom: 1px solid #e0e0e0;">
+              <td style="padding: 12px;">${escapeHtml(
+                file.original_filename
+              )}</td>
+              <td style="padding: 12px;">${formatFileSize(file.size)}</td>
+              <td style="padding: 12px;">${formatDate(file.deleted_at)}</td>
+              <td style="padding: 12px; ${deadlineColor}">
+                ${formatDate(file.restore_deadline)} 
+                <br><small>(${daysLeft} ngày)</small>
+              </td>
+              <td style="padding: 12px; text-align: center;">
+                <button onclick="restoreUserFile(${file.id})" 
+                        style="background: #27ae60; color: white; border: none; padding: 6px 12px; border-radius: 6px; margin-right: 5px; cursor: pointer;">
+                  ♻️ Khôi phục
+                </button>
+                <button onclick="permanentlyDeleteUserFile(${file.id})" 
+                        style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">
+                  💀 Xóa vĩnh viễn
+                </button>
+              </td>
+            </tr>
+          `;
+          })
+          .join("");
+      }
+
+      function filterUserRecycleFiles() {
+        const search = document
+          .getElementById("recycleBinSearch")
+          .value.toLowerCase();
+        const filtered = userRecycleFiles.filter((file) =>
+          file.original_filename.toLowerCase().includes(search)
+        );
+        renderUserRecycleFiles(filtered);
+      }
+
+      async function restoreUserFile(recycleId) {
+        if (!confirm("Bạn có chắc muốn khôi phục file này?")) return;
+
+        try {
+          const response = await fetch(
+            `/api/recycle-bin/${recycleId}/restore`,
+            {
+              method: "POST",
+              credentials: "include",
+            }
+          );
+
+          if (response.ok) {
+            alert("File đã được khôi phục thành công!");
+            await loadUserRecycleFiles();
+            await loadFiles(); // Reload main file list
+          } else {
+            const error = await response.json();
+            alert("Lỗi: " + (error.error || "Không thể khôi phục file"));
+          }
+        } catch (error) {
+          console.error("Error restoring file:", error);
+          alert("Có lỗi xảy ra khi khôi phục file");
+        }
+      }
+
+      async function permanentlyDeleteUserFile(recycleId) {
+        if (
+          !confirm(
+            "⚠️ CẢNH BÁO: File sẽ bị xóa vĩnh viễn và KHÔNG THỂ KHÔI PHỤC!\n\nBạn có chắc chắn muốn tiếp tục?"
+          )
+        )
+          return;
+
+        try {
+          const response = await fetch(`/api/recycle-bin/${recycleId}/delete`, {
+            method: "DELETE",
+            credentials: "include",
+          });
+
+          if (response.ok) {
+            alert("File đã được xóa vĩnh viễn!");
+            await loadUserRecycleFiles();
+          } else {
+            const error = await response.json();
+            alert("Lỗi: " + (error.error || "Không thể xóa vĩnh viễn file"));
+          }
+        } catch (error) {
+          console.error("Error permanently deleting file:", error);
+          alert("Có lỗi xảy ra khi xóa vĩnh viễn file");
+        }
+      }
+
+      // Format date với timezone Việt Nam
+      function formatDate(dateString) {
+        if (!dateString) return "N/A";
+
+        try {
+          const date = new Date(dateString);
+
+          // Check if date is valid
+          if (isNaN(date.getTime())) {
+            console.warn("Invalid date:", dateString);
+            return "Invalid Date";
+          }
+
+          // Format với timezone Việt Nam (UTC+7)
+          const options = {
+            timeZone: "Asia/Ho_Chi_Minh",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          };
+
+          const formatter = new Intl.DateTimeFormat("vi-VN", options);
+          return formatter.format(date);
+        } catch (error) {
+          console.error("Error formatting date:", dateString, error);
+          return "Error";
+        }
+      }
+
+      // Đóng modal khi click bên ngoài
+      window.onclick = function (event) {
+        const modal = document.getElementById("createFolderModal");
+        if (event.target === modal) {
+          closeCreateFolderModal();
+        }
+      };
+
+      // Hide context menu when clicking elsewhere
+      document.addEventListener("click", function (event) {
+        if (!event.target.closest(".context-menu")) {
+          hideContextMenu();
+        }
+      });
+
+      // Prevent default context menu
+      document.addEventListener("contextmenu", function (event) {
+        if (!event.target.closest(".file-card")) {
+          event.preventDefault();
+        }
+      });
+    </script>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="preview-modal">
+      <div class="preview-content">
+        <div class="preview-header">
+          <h3 id="previewTitle" class="preview-title">File Preview</h3>
+          <button id="previewClose" class="preview-close">&times;</button>
+        </div>
+        <div id="previewBody" class="preview-body">
+          <div class="preview-loading">
+            <div class="preview-spinner"></div>
+            <p>Loading preview...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

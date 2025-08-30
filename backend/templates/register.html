@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Đăng Ký - FlexTransfer Hub</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .register-container {
+        background: white;
+        padding: 40px;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+      }
+
+      .logo {
+        font-size: 2.5rem;
+        margin-bottom: 10px;
+      }
+
+      h1 {
+        color: #333;
+        margin-bottom: 30px;
+        font-size: 1.8rem;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+        text-align: left;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: #4a5568;
+      }
+
+      .form-group input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+      }
+
+      .form-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .password-hint {
+        font-size: 0.8rem;
+        color: #6b7280;
+        margin-top: 4px;
+      }
+
+      .btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 14px 24px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        width: 100%;
+        margin-bottom: 20px;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .login-link {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .login-link:hover {
+        text-decoration: underline;
+      }
+
+      .error-message {
+        background: #fee2e2;
+        color: #dc2626;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 0.9rem;
+      }
+
+      .success-message {
+        background: #d1fae5;
+        color: #059669;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 0.9rem;
+      }
+
+      .loading {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+      }
+
+      .spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .validation-message {
+        font-size: 0.8rem;
+        margin-top: 4px;
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+
+      .validation-error {
+        background: #fee2e2;
+        color: #dc2626;
+      }
+
+      .validation-success {
+        background: #d1fae5;
+        color: #059669;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="register-container">
+      <div class="logo">📝</div>
+      <h1>Đăng Ký Tài Khoản</h1>
+
+      <div id="errorMessage" class="error-message" style="display: none"></div>
+      <div
+        id="successMessage"
+        class="success-message"
+        style="display: none"
+      ></div>
+
+      <form id="registerForm">
+        <div class="form-group">
+          <label for="username">👤 Tên Đăng Nhập:</label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            required
+            placeholder="Nhập tên đăng nhập..."
+          />
+          <div
+            id="usernameValidation"
+            class="validation-message"
+            style="display: none"
+          ></div>
+        </div>
+
+        <div class="form-group">
+          <label for="password">🔒 Mật Khẩu:</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            required
+            placeholder="Nhập mật khẩu..."
+          />
+          <div class="password-hint">Mật khẩu phải có ít nhất 6 ký tự</div>
+          <div
+            id="passwordValidation"
+            class="validation-message"
+            style="display: none"
+          ></div>
+        </div>
+
+        <div class="form-group">
+          <label for="confirmPassword">🔒 Xác Nhận Mật Khẩu:</label>
+          <input
+            type="password"
+            id="confirmPassword"
+            name="confirmPassword"
+            required
+            placeholder="Nhập lại mật khẩu..."
+          />
+          <div
+            id="confirmPasswordValidation"
+            class="validation-message"
+            style="display: none"
+          ></div>
+        </div>
+
+        <button type="submit" class="btn" id="registerBtn">
+          <span class="btn-text">Đăng Ký</span>
+          <div class="loading">
+            <div class="spinner"></div>
+            <span>Đang đăng ký...</span>
+          </div>
+        </button>
+      </form>
+
+      <p>
+        Đã có tài khoản?
+        <a href="/login" class="login-link">Đăng nhập ngay</a>
+      </p>
+    </div>
+
+    <script>
+      const registerForm = document.getElementById("registerForm");
+      const registerBtn = document.getElementById("registerBtn");
+      const errorMessage = document.getElementById("errorMessage");
+      const successMessage = document.getElementById("successMessage");
+      const btnText = document.querySelector(".btn-text");
+      const loading = document.querySelector(".loading");
+
+      // Validation elements
+      const usernameField = document.getElementById("username");
+      const passwordField = document.getElementById("password");
+      const confirmPasswordField = document.getElementById("confirmPassword");
+      const usernameValidation = document.getElementById("usernameValidation");
+      const passwordValidation = document.getElementById("passwordValidation");
+      const confirmPasswordValidation = document.getElementById(
+        "confirmPasswordValidation"
+      );
+
+      function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = "block";
+        successMessage.style.display = "none";
+      }
+
+      function showSuccess(message) {
+        successMessage.textContent = message;
+        successMessage.style.display = "block";
+        errorMessage.style.display = "none";
+      }
+
+      function hideMessages() {
+        errorMessage.style.display = "none";
+        successMessage.style.display = "none";
+      }
+
+      function setLoading(isLoading) {
+        if (isLoading) {
+          btnText.style.display = "none";
+          loading.style.display = "flex";
+          registerBtn.disabled = true;
+        } else {
+          btnText.style.display = "block";
+          loading.style.display = "none";
+          registerBtn.disabled = false;
+        }
+      }
+
+      function showValidation(element, message, isError = true) {
+        element.textContent = message;
+        element.className = `validation-message ${
+          isError ? "validation-error" : "validation-success"
+        }`;
+        element.style.display = "block";
+      }
+
+      function hideValidation(element) {
+        element.style.display = "none";
+      }
+
+      // Real-time validation
+      usernameField.addEventListener("input", () => {
+        const username = usernameField.value;
+        if (username.length < 3) {
+          showValidation(
+            usernameValidation,
+            "Tên đăng nhập phải có ít nhất 3 ký tự"
+          );
+        } else if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+          showValidation(
+            usernameValidation,
+            "Chỉ được sử dụng chữ cái, số và dấu gạch dưới"
+          );
+        } else {
+          showValidation(usernameValidation, "Tên đăng nhập hợp lệ ✓", false);
+        }
+      });
+
+      passwordField.addEventListener("input", () => {
+        const password = passwordField.value;
+        if (password.length < 6) {
+          showValidation(
+            passwordValidation,
+            "Mật khẩu phải có ít nhất 6 ký tự"
+          );
+        } else {
+          showValidation(passwordValidation, "Mật khẩu hợp lệ ✓", false);
+        }
+
+        // Re-validate confirm password if it has value
+        if (confirmPasswordField.value) {
+          validateConfirmPassword();
+        }
+      });
+
+      function validateConfirmPassword() {
+        const password = passwordField.value;
+        const confirmPassword = confirmPasswordField.value;
+
+        if (confirmPassword && password !== confirmPassword) {
+          showValidation(
+            confirmPasswordValidation,
+            "Mật khẩu xác nhận không khớp"
+          );
+          return false;
+        } else if (confirmPassword && password === confirmPassword) {
+          showValidation(confirmPasswordValidation, "Mật khẩu khớp ✓", false);
+          return true;
+        }
+        return true;
+      }
+
+      confirmPasswordField.addEventListener("input", validateConfirmPassword);
+
+      registerForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const username = usernameField.value;
+        const password = passwordField.value;
+        const confirmPassword = confirmPasswordField.value;
+
+        // Validation
+        if (!username || !password || !confirmPassword) {
+          showError("Vui lòng nhập đầy đủ thông tin");
+          return;
+        }
+
+        if (username.length < 3) {
+          showError("Tên đăng nhập phải có ít nhất 3 ký tự");
+          return;
+        }
+
+        if (password.length < 6) {
+          showError("Mật khẩu phải có ít nhất 6 ký tự");
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          showError("Mật khẩu xác nhận không khớp");
+          return;
+        }
+
+        hideMessages();
+        setLoading(true);
+
+        try {
+          const response = await fetch("/api/register", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ username, password }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            showSuccess(
+              "Đăng ký thành công! Đang chuyển đến trang đăng nhập..."
+            );
+
+            // Redirect to login page after 2 seconds
+            setTimeout(() => {
+              window.location.href = "/login";
+            }, 2000);
+          } else {
+            showError(data.error || "Đăng ký thất bại");
+          }
+        } catch (error) {
+          console.error("Register error:", error);
+          showError("Lỗi kết nối. Vui lòng thử lại.");
+        } finally {
+          setLoading(false);
+        }
+      });
+
+      // Focus vào username field khi load trang
+      usernameField.focus();
+    </script>
+  </body>
+</html>
